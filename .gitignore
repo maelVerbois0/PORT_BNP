@@ -1,0 +1,12 @@
+# Build artifacts
+obj/
+tusp_solver
+build/
+
+.env
+
+# Solution files
+solutions_log/
+iterations_pricing**
+*.log
+results**.txt
