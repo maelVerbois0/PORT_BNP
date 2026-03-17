@@ -10,3 +10,6 @@ solutions_log/
 iterations_pricing**
 *.log
 results**.txt
+
+#Zone identifier
+*.Zone.Identifier 
