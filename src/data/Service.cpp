@@ -8,10 +8,6 @@ Service::Service(int id, string n, int c, int d):ID(id),name(n),cost(c),duration
 {
 }
 
-void Service::addArc(int a)
-{
-    arcs.push_back(a);
-}
 
 // Getters
 int Service::getID() const
