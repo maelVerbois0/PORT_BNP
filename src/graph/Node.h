@@ -28,9 +28,9 @@ public:
     int getPNode() const;
     int getTime() const;
     int getID() const {return ID;};
-    const std::vector<int>& getIncArcs() { return iArcs; }
-    const std::vector<int>& getFromArcs() { return fArcs; }
-    const std::vector<int>& getToArcs() { return tArcs; }
+    const std::vector<int>& getIncArcs() const { return iArcs; }
+    const std::vector<int>& getFromArcs() const { return fArcs; }
+    const std::vector<int>& getToArcs() const { return tArcs; }
 };
 
 

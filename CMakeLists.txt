@@ -4,6 +4,8 @@ cmake_minimum_required(VERSION 3.20)
 # C++ standard
 set(CMAKE_CXX_STANDARD 23)
 
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+
 if (${CMAKE_SYSTEM_NAME} MATCHES "Windows")
 	set(CMAKE_CXX_FLAGS  "/O2 /w  /DNDEBUG")
 else()
@@ -24,9 +26,9 @@ if(NOT CMAKE_BUILD_TYPE)
 endif()
 message(STATUS "Build type: ${CMAKE_BUILD_TYPE}")
 
-# if (NOT DEFINED ENV{GUROBI_HOME} AND NOT DEFINED GUROBI_DIR)
-#     message(FATAL_ERROR "No cache variable named GUROBI_DIR is defined, and GUROBI_HOME was not found in the environment variables. Please, define one of them.")
-# endif ()
+if (NOT DEFINED ENV{GUROBI_HOME} AND NOT DEFINED GUROBI_DIR)
+    message(FATAL_ERROR "No cache variable named GUROBI_DIR is defined, and GUROBI_HOME was not found in the environment variables. Please, define one of them.")
+endif ()
 
 #Source code
 
@@ -38,14 +40,15 @@ include_directories(
     ${SRC_DIR}/data
     ${SRC_DIR}/graph
     ${SRC_DIR}/builder
+    ${SRC_DIR}/solver
 
-   # ${GUROBI_INC}
+    ${GUROBI_INC}
 )
 
 set(
-    SOURCE_FILES_PARSER
+    SOURCE_FILES_
     src/parser/GraphParser.cpp
-    
+
     src/data/PLink.cpp
     src/data/PNode.cpp
     src/data/Service.cpp
@@ -55,26 +58,28 @@ set(
     src/graph/Node.cpp
     src/graph/TimeSpaceGraph.cpp
 
-    
+    src/builder/GraphBuilder.cpp
+
+    src/solver/MasterProblem.cpp
+    src/solver/PricingProblem.cpp
 
 )
 ################# Libraries #################
 # Add the core library
-add_library(tusp_parser_lib ${SOURCE_FILES_PARSER})
+add_library(tusp_core ${SOURCE_FILES_})
 
-# ################# Executables #################
-add_executable(test_parser src/test_parser.cpp)
-target_link_libraries(test_parser PUBLIC tusp_parser_lib)
 
-# # Finding Gurobi
-# set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_SOURCE_DIR}/cmake")
-# message("CMAKE_MODULE_PATH : ${CMAKE_MODULE_PATH}")
-# find_package(GUROBI REQUIRED)
-# # Linking to Gurobi
-# include_directories(${GUROBI_INCLUDE_DIRS})
-# target_link_libraries(tusp_core PUBLIC gurobi)
 
-# ################# Executables #################
-# # Create the column generation executable
-# add_executable(tusp_solver src/tusp_column_generation.cpp)
-# target_link_libraries(tusp_solver PUBLIC tusp_core)
+# Finding Gurobi
+set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_SOURCE_DIR}/cmake")
+message("CMAKE_MODULE_PATH : ${CMAKE_MODULE_PATH}")
+find_package(GUROBI REQUIRED)
+# Linking to Gurobi
+include_directories(${GUROBI_INCLUDE_DIRS})
+target_link_libraries(tusp_core PUBLIC gurobi)
+
+
+################# Executables #################
+# Create the column generation executable
+add_executable(tusp_solver src/test_column_generation.cpp)
+target_link_libraries(tusp_solver PUBLIC tusp_core)

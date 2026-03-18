@@ -17,7 +17,7 @@ private:
     int num_services_;
 public:
 
-    TimeSpaceGraph(int time_horizon, int time_step, int num_physical_nodes, std::vector<Node> nodes, std::vector<Arc> arcs, std::vector<std::vector<int>> arc_providing_services, std::vector<std::vector<bool>> arc_accessible_by_train, std::vector<int> dummy_arcs);
+    TimeSpaceGraph(int time_horizon, int time_step, int num_physical_nodes, int num_services, std::vector<Node> nodes, std::vector<Arc> arcs, std::vector<std::vector<int>> arc_providing_services, std::vector<std::vector<bool>> arc_accessible_by_train, std::vector<int> dummy_arcs);
 
     // Ajout d'éléments
     void add_node(const Node& node);
@@ -36,6 +36,7 @@ public:
     // Utilitaires
     int get_horizon() const { return T_; }
     int get_time_step() const { return t_s_; }
+    bool arc_accessible_by_train(int train_id, int arc_id) const {return arc_accessible_by_train_[train_id][arc_id];}
     
     // Remplace la fonction globale n_id
     int compute_virtual_node_id(int p, int t, int l) const;

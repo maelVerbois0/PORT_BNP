@@ -2,6 +2,7 @@
 #include "gurobi_c++.h"
 #include <memory>
 #include "Column.h"
+#include <iostream>
 
 using namespace std;
 
@@ -10,6 +11,7 @@ MasterProblem::MasterProblem(const TimeSpaceGraph& graph, const vector<Train>& t
     model_ = make_unique<GRBModel>(*env_);
     num_trains_ = trains.size();
     num_pnodes_ = graph.get_nb_pnodes();
+    std::cerr << "Nombre de service dans le graphe : " << graph.get_nb_services() << endl;
     num_services_ = graph.get_nb_services();
     max_time_ = graph.get_horizon();
     time_step_ = graph.get_time_step();
@@ -44,13 +46,13 @@ void MasterProblem::build_initial_model(const std::vector<Train>& trains, const 
     //Construction des contraintes de services (une par train et une par service)
     for(auto& train: trains){    
         k = train.get_ID() - 1;
+        service_required_[k] = train.get_services();
         for (int s = 0; s < num_services_ ; s++)
         {
-            if (train.get_service(s))
+            if (service_required_[k][s])
             {
                 service_constrs_[k][s] = model_->addConstr(dummy_vars_[k],GRB_GREATER_EQUAL, 1.0, "Train " + to_string(k + 1) + " service " + to_string(s));
             }
-            service_required_[k] = train.get_services();
         }
 
 
@@ -93,10 +95,15 @@ std::vector<double> MasterProblem::get_flow_duals() const{
 }
 
 std::vector<std::vector<double>> MasterProblem::get_service_duals() const{
-    std::vector<std::vector<double>> service_duals(num_trains_, std::vector<double>(num_services_));
+    std::vector<std::vector<double>> service_duals(num_trains_, std::vector<double>(num_services_, 0.));
     for(int k  = 0; k < num_trains_; k++){
+        std::cerr << "La longueur du nombre de service required pour le train " << k + 1<< " est : " << service_required_.size() << endl;
+        std::cerr << "Le nombre de servide est :" << num_services_ << endl;
         for(int s = 0; s < num_services_; s++){
-            if(service_required_[k][s]) service_duals[k][s] = service_constrs_[k][s].get(GRB_DoubleAttr_Pi);
+            
+            if(service_required_[k][s]) {
+                service_duals[k][s] = service_constrs_[k][s].get(GRB_DoubleAttr_Pi);
+            }
         }
     }
     return service_duals;

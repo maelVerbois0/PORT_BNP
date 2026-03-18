@@ -391,6 +391,6 @@ const TimeSpaceGraph GraphBuilder::build(){
     build_state_transfer_arcs();
     build_dummy_arcs();
 
-    return TimeSpaceGraph(T_, t_s_, n_pnodes_, temp_nodes_, temp_arcs_, temp_arcs_providing_services, temp_arcs_accessible_by_train, temp_dummy_arcs_);
+    return TimeSpaceGraph(T_, t_s_, n_pnodes_, n_services_, temp_nodes_, temp_arcs_, temp_arcs_providing_services, temp_arcs_accessible_by_train, temp_dummy_arcs_);
 }
 

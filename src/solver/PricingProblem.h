@@ -15,18 +15,16 @@ private:
     // Constante pour l'algorithme de plus court chemin
     static constexpr double INF = 1e9; 
 
-    // Calcule le coût réduit d'un arc à la volée
+    // Calcule le coût réduit d'un arc à la volée définit comme étant le cout de l'arc - le cout des conflits associées à l'arc (la logique de service est implémenté dans l'algo de recherche)
     double get_arc_reduced_cost(
         int train_id, 
         const Arc& arc, 
-        const std::vector<double>& service_duals_k, 
         const std::vector<std::vector<double>>& conflict_duals
     ) const;
 
 public:
     PricingProblem(const TimeSpaceGraph& graph, const std::vector<Train>& trains);
 
-    // Résout le pricing pour TOUS les trains et renvoie les colonnes intéressantes
     std::vector<Column> solve(
         const std::vector<double>& flow_duals, 
         const std::vector<std::vector<double>>& service_duals, 
