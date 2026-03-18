@@ -44,7 +44,7 @@ private:
 
 public:
     explicit GraphBuilder(const InstanceData& instance_data);
-    const TimeSpaceGraph& build();
+    const TimeSpaceGraph build();
 };
 
 

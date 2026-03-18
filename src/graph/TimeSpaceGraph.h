@@ -16,7 +16,8 @@ private:
     int num_pnodes_;      // Nombre de nœuds physiques
     int num_services_;
 public:
-    TimeSpaceGraph(int time_horizon, int time_step, int num_physical_nodes);
+
+    TimeSpaceGraph(int time_horizon, int time_step, int num_physical_nodes, std::vector<Node> nodes, std::vector<Arc> arcs, std::vector<std::vector<int>> arc_providing_services, std::vector<std::vector<bool>> arc_accessible_by_train, std::vector<int> dummy_arcs);
 
     // Ajout d'éléments
     void add_node(const Node& node);
@@ -27,6 +28,10 @@ public:
     const std::vector<Arc>& get_arcs() const;
     const Node& get_node(int id) const;
     const Arc& get_arc(int id) const;
+    int get_nb_pnodes() const {return num_pnodes_;}
+    int get_nb_services() const {return num_services_;}
+    int get_dummy_arc_id(int k) const{return dummy_arcs_[k];}
+
     
     // Utilitaires
     int get_horizon() const { return T_; }

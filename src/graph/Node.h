@@ -27,6 +27,7 @@ public:
 
     int getPNode() const;
     int getTime() const;
+    int getID() const {return ID;};
     const std::vector<int>& getIncArcs() { return iArcs; }
     const std::vector<int>& getFromArcs() { return fArcs; }
     const std::vector<int>& getToArcs() { return tArcs; }

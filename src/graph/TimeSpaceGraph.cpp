@@ -5,10 +5,16 @@
 
 using namespace std;
 
-TimeSpaceGraph::TimeSpaceGraph(const int time_horizon, const int time_step, const int num_physical_nodes):T_(time_horizon),t_s_(time_step),num_pnodes_(num_physical_nodes)
-{   
-}
-
+TimeSpaceGraph::TimeSpaceGraph(int time_horizon, int time_step, int num_physical_nodes, std::vector<Node> nodes, std::vector<Arc> arcs, std::vector<std::vector<int>> arc_providing_services, std::vector<std::vector<bool>> arc_accessible_by_train, std::vector<int> dummy_arcs):
+t_s_(time_step),
+T_(time_horizon),
+num_pnodes_(num_physical_nodes),
+nodes_(nodes),
+arcs_(arcs),
+arc_providing_services_(arc_providing_services),
+arc_accessible_by_train_(arc_accessible_by_train),
+dummy_arcs_(dummy_arcs)
+{}
 
 void TimeSpaceGraph::add_node(const Node& node){
     nodes_.push_back(node);

@@ -1,30 +1,63 @@
 #pragma once
+
 #include <vector>
-#include "Column.h"
+#include <memory>
 #include "gurobi_c++.h"
+#include "Column.h"
+#include "TimeSpaceGraph.h"
+#include "Train.h"
 
-class MasterProblem{
-    public:
-        MasterProblem(int num_trains, int num_arcs);
-        ~MasterProblem();
+class MasterProblem {
+private:
+    std::unique_ptr<GRBEnv> env_;
+    std::unique_ptr<GRBModel> model_;
 
-        void solve();
-        bool is_optimal() const;
-        bool is_infeasible() const;
-        double get_objective_value() const;
-        std::vector<double> get_service_duals() const; // Valeurs des variables duales pour chaque contraintes sur la réalisation d'un service s pour un train k
-        std::vector<double> get_conflict_duals() const; //Valeurs des variables duales associées à l'incompatibilité entre les chemins pour une positition physique p à l'instant t
-        void add_column(const Column& col);
-        void set_column_upper_bound(int column_id, double upper_bound);
-        void is_solution_integer() const;
-        std::vector<int> get_active_column_id() const;
-    private:
-        int num_trains_;
-        int num_arcs_;
-        std::unique_ptr<GRBEnv> env_;
-        std::unique_ptr<GRBModel> model_;
-        std::vector<GRBVar> lp_columns_;
-        std::vector<GRBVar> dummy_vars_;
+    int num_trains_;
+    int num_services_;
+    int num_pnodes_;
+    int max_time_;
+    int time_step_;
 
-        void build_initial_model();
+    // --- Variables ---
+    std::vector<GRBVar> column_vars_{}; 
+    std::vector<GRBVar> dummy_vars_{};
+
+    // --- Contraintes (Fini les tableaux plats !) ---
+    // 1. Contraintes de flux (1 chemin par train) : Taille [num_trains]
+    std::vector<GRBConstr> flow_constrs_; 
+    
+    // 2. Contraintes de service (1 par train et par service requis) : Taille [num_trains][num_services]
+    std::vector<std::vector<GRBConstr>> service_constrs_;
+    std::vector<std::vector<bool>> service_required_;  // Pour chaque train k renvoie le vecteur de booléens correspondant au service
+    
+    // 3. Contraintes de conflit (Nœuds physiques vs Temps) : Taille [num_pnodes][(max_time / time_step)]
+    std::vector<std::vector<GRBConstr>> conflict_constrs_; 
+
+    // --- Méthode interne ---
+    void build_initial_model(const std::vector<Train>& trains, const TimeSpaceGraph& graph);
+
+public:
+    MasterProblem(const TimeSpaceGraph& graph, const std::vector<Train>& trains);
+    ~MasterProblem();
+
+    // --- Résolution continue (Column Generation) ---
+    void solve();
+    bool is_optimal() const;
+    bool is_infeasible() const;
+    double get_objective_value() const;
+
+    // --- Extraction des variables duales ---
+    // Ces méthodes remplaceront ton ancien `build_dual_vectors`
+    std::vector<double> get_flow_duals() const;                            // Retourne Pi
+    std::vector<std::vector<double>> get_service_duals() const;            // Retourne Alpha
+    std::vector<std::vector<double>> get_conflict_duals() const;           // Retourne Mu
+
+    // --- Ajout dynamique ---
+    // Reçoit une colonne, crée la GRBVar correspondante, et met des "1" dans les bonnes contraintes
+    void add_column(const Column& col, const TimeSpaceGraph& graph);
+
+    // --- Phase Finale (Résolution Entière) ---
+    void convert_to_integer();
+    void convert_to_continuous();
+    std::vector<int> get_active_columns_ids() const;
 };

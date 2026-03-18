@@ -20,7 +20,6 @@ int main(int argc, char** argv) {
         std::cout << "Nombre de nœuds (pnodes): " << data.pnodes.size() << std::endl;
         std::cout << "Nombre de liens (plinks): " << data.plinks.size() << std::endl;
         std::cout << "Nombre de trains      : " << data.trains.size() << std::endl;
-        std::cout << "Horizon de temps (T)  : " << data.max_time << std::endl;
 
     } catch (const std::runtime_error& e) {
         std::cerr << "\n❌ Erreur critique de parsing :\n" << e.what() << std::endl;

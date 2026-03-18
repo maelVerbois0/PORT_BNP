@@ -14,5 +14,4 @@ struct InstanceData {
     std::vector<TrainType> train_types;
     std::vector<Service> services;
     std::vector<int> assignement;
-    int max_time = 0; 
 };

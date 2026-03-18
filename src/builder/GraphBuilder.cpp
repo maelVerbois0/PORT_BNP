@@ -10,8 +10,12 @@
 void GraphBuilder::compute_time_step()
 {
     int t = 0; // time step
+    int T = 0;
     for (Train train : data_.trains)
     {
+        if(train.get_d_t() > T){
+            T = train.get_d_t();
+        }
         t = __gcd(t, train.get_a_t());
         t = __gcd(t, train.get_d_t());
     }
@@ -27,7 +31,8 @@ void GraphBuilder::compute_time_step()
     {
         t = __gcd(t, link.get_length());
     }
-    t_s_ =  t;  
+    t_s_ =  t;
+    T_ = T;  
 }
 
 void GraphBuilder::build_nodes()
@@ -72,7 +77,7 @@ void GraphBuilder::build_a_d_arcs()
                     temp_nodes_[v].addToArc(a_id);
                     a_id++;
                     for (auto& t2 : data_.trains){
-                        temp_arcs_accessible_by_train[t2.get_ID()].push_back(t.get_ID() == t2.get_ID());
+                        temp_arcs_accessible_by_train[t2.get_ID() - 1].push_back(t.get_ID() == t2.get_ID());
                     }
 
                     v = TimeSpaceGraph::compute_virtual_node_id(p , d_t, 2, t_s_, n_pnodes_);
@@ -90,7 +95,7 @@ void GraphBuilder::build_a_d_arcs()
                     }
                     a_id++;
                     for (auto& t2 : data_.trains){
-                        temp_arcs_accessible_by_train[t2.get_ID()].push_back(t.get_ID() == t2.get_ID());
+                        temp_arcs_accessible_by_train[t2.get_ID() - 1].push_back(t.get_ID() == t2.get_ID());
                     }
                 }
             }
@@ -177,7 +182,7 @@ void GraphBuilder::helper_build_service_arc(int p_id, int l, int t1, int d, int 
     }
     a_id++;
     for(auto& train : data_.trains){
-        temp_arcs_accessible_by_train[train.get_ID()].push_back(train.get_service(s));
+        temp_arcs_accessible_by_train[train.get_ID() - 1].push_back(train.get_service(s));
     }
 }
 
@@ -209,8 +214,8 @@ void GraphBuilder::build_service_arcs()
 
 void GraphBuilder::helper_build_storage_arc(int p_id, int l, int t1, int d, int ttype)
 {
-    int n1 = TimeSpaceGraph::compute_virtual_node_id(p_id, t1, l, n_pnodes_, t_s_);
-    int n2 = TimeSpaceGraph::compute_virtual_node_id(p_id, t1 + d, 0, n_pnodes_, t_s_);
+    int n1 = TimeSpaceGraph::compute_virtual_node_id(p_id, t1, l, t_s_, n_pnodes_);
+    int n2 = TimeSpaceGraph::compute_virtual_node_id(p_id, t1 + d, 0, t_s_, n_pnodes_);
     int v;
 
     temp_arcs_.push_back(Arc(a_id, STORAGE, n1, n2, w_dwell, c_park, d)); 
@@ -219,13 +224,13 @@ void GraphBuilder::helper_build_storage_arc(int p_id, int l, int t1, int d, int 
     temp_nodes_[n1].addFromArc(a_id);
     for (int dt = 0; dt < d; dt += t_s_)
     { // add incompatible arc to each node it occupies during service
-        v = TimeSpaceGraph::compute_virtual_node_id(p_id, t1 + dt, 0, n_pnodes_, t_s_);
+        v = TimeSpaceGraph::compute_virtual_node_id(p_id, t1 + dt, 0, t_s_, n_pnodes_);
         temp_nodes_[v].addIncArc(a_id);
         temp_arcs_[a_id].add_node(p_id, dt + t1);
     }
     for (auto& train : data_.trains) // Add arcs to train arcs
     {
-        temp_arcs_accessible_by_train[train.get_ID()].push_back(train.get_type() == ttype);
+        temp_arcs_accessible_by_train[train.get_ID() - 1].push_back(train.get_type() == ttype);
     }
     a_id++;
 }
@@ -269,7 +274,7 @@ void GraphBuilder::helper_build_dwelling_arc(int p_id, int t1)
     temp_arcs_[a_id].add_node(p_id, t1);
     for (auto &train : data_.trains)
     {
-        temp_arcs_accessible_by_train[train.get_ID()].push_back(true);
+        temp_arcs_accessible_by_train[train.get_ID() - 1].push_back(true);
     }
     a_id++;
 }
@@ -293,15 +298,15 @@ void GraphBuilder::build_dwelling_arcs()
 
 void GraphBuilder::helper_build_state_transfer_arc(int p_id, int l, int t1)
 {
-    int n1 = TimeSpaceGraph::compute_virtual_node_id(p_id, t1, 0, n_pnodes_, t_s_);
-    int n2 = TimeSpaceGraph::compute_virtual_node_id(p_id, t1, l, n_pnodes_, t_s_);
+    int n1 = TimeSpaceGraph::compute_virtual_node_id(p_id, t1, 0, t_s_, n_pnodes_);
+    int n2 = TimeSpaceGraph::compute_virtual_node_id(p_id, t1, l, t_s_, n_pnodes_);
 
     temp_arcs_.push_back(Arc(a_id, STATE_TRANSFER, n1, n2));
     temp_nodes_[n2].addToArc(a_id);
     temp_nodes_[n1].addFromArc(a_id);
     for (auto& train : data_.trains)
     {
-        temp_arcs_accessible_by_train[train.get_ID()].push_back(true);
+        temp_arcs_accessible_by_train[train.get_ID() - 1].push_back(true);
     }
     a_id++;
 }
@@ -346,10 +351,10 @@ void GraphBuilder::helper_build_dummy_arc_k(int k, int w_shu)
     c = 2 * c;
 
     temp_arcs_.push_back(Arc(a_id, DUMMY, 0, 1, w, c, d));
-    temp_dummy_arcs_.push_back(a_id);
+    temp_dummy_arcs_[k - 1] = a_id;
     for (auto& train : data_.trains)
     {
-        temp_arcs_accessible_by_train[train.get_ID()].push_back(train.get_ID() == k);
+        temp_arcs_accessible_by_train[train.get_ID() - 1].push_back(train.get_ID() == k);
     }
     a_id++;
 }
@@ -373,5 +378,19 @@ GraphBuilder::GraphBuilder(const InstanceData& data):data_(data),n_services_(dat
     temp_arcs_accessible_by_train = vector<vector<bool>>(data_.trains.size());
     temp_dummy_arcs_ = vector<int>(data.trains.size());
 
+}
+
+const TimeSpaceGraph GraphBuilder::build(){
+    compute_time_step();
+    build_nodes();
+    build_a_d_arcs();
+    build_shunting_arcs();
+    build_service_arcs();
+    build_storage_arcs();
+    build_dwelling_arcs();
+    build_state_transfer_arcs();
+    build_dummy_arcs();
+
+    return TimeSpaceGraph(T_, t_s_, n_pnodes_, temp_nodes_, temp_arcs_, temp_arcs_providing_services, temp_arcs_accessible_by_train, temp_dummy_arcs_);
 }
 
