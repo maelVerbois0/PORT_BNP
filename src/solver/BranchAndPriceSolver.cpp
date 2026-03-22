@@ -1,0 +1,203 @@
+#include "BranchAndPriceSolver.h"
+#include "SearchTree.h"
+#include "PricingProblem.h"
+#include "MasterProblem.h"
+#include <map>
+#include <cmath>
+#include <algorithm>
+#include <optional>
+#include <stdexcept>
+
+std::optional<BranchingDecision> BranchAndPriceSolver::choose_branching_variable() const {
+    
+    // Structure locale pour stocker temporairement nos chemins fractionnaires
+    struct FractionalPath {
+        const Column* col;
+        double flow;
+    };
+    
+    // 1. Récupération des chemins fractionnaires triés par train
+    std::map<int, std::vector<FractionalPath>> train_fractional_paths;
+    
+    std::vector<int> active_ids = master_.get_active_columns_ids();
+    for (int id : active_ids) {
+        double val = master_.get_column_value(id);
+        // On cible strictement les variables fractionnaires (exclut les 0 et les 1)
+        if (val > 1e-5 && val < 1.0 - 1e-5) {
+            const Column& col = column_pool_.get_column(id);
+            train_fractional_paths[col.train_id].push_back({&col, val});
+        }
+    }
+
+    // Si tout est entier (ou vide), on s'arrête là !
+    if (train_fractional_paths.empty()) {
+        throw std::runtime_error("Trying to apply branching on an integer solution !");
+    }
+
+    BranchingDecision best_decision;
+
+    // 2. Recherche du noeud de divergence pour chaque train
+    for (const auto& [train_id, paths] : train_fractional_paths) {
+        if (paths.empty()) continue;
+
+        double total_fractional_flow = 0.0;
+        int min_path_length = 1e9;
+        
+        for (const auto& p : paths) {
+            total_fractional_flow += p.flow;
+            if (p.col->arc_ids.size() < min_path_length) {
+                min_path_length = p.col->arc_ids.size();
+            }
+        }
+
+        // Parcours chronologique des arcs pour trouver la première divergence
+        int divergence_idx = 0;
+        bool diverged = false;
+        
+        for (int i = 0; i < min_path_length; ++i) {
+            int first_arc = paths[0].col->arc_ids[i];
+            // On vérifie si tous les chemins passent par cet arc à l'étape i
+            for (const auto& p : paths) {
+                if (p.col->arc_ids[i] != first_arc) {
+                    diverged = true;
+                    break;
+                }
+            }
+            if (diverged) {
+                divergence_idx = i;
+                break;
+            }
+        }
+
+        // 3. Collecte des arcs sortants au point de divergence et de leurs flux
+        std::map<int, double> outgoing_arc_flows;
+        if (diverged) {
+            for (const auto& p : paths) {
+                outgoing_arc_flows[p.col->arc_ids[divergence_idx]] += p.flow;
+            }
+        } else {
+            // Cas très rare : Un seul chemin fractionnaire (par exemple équilibré avec une variable dummy)
+            // On force le branchement sur son premier arc
+            outgoing_arc_flows[paths[0].col->arc_ids[0]] += total_fractional_flow;
+        }
+
+        
+        double best_train_score = 1e9;
+        std::vector<int> best_partition_A, best_partition_B;
+
+        // 4. Partitionnement 50/50 avec Heuristique de Packing (Gloutonne)
+        
+        // On stocke les paires {flux, arc_id} pour pouvoir les trier
+        std::vector<std::pair<double, int>> sorted_arcs;
+        for (const auto& [arc, f] : outgoing_arc_flows) {
+            sorted_arcs.push_back({f, arc});
+        }
+
+        // Étape A : On trie les arcs par flux décroissant (les plus gros blocs en premier)
+        std::sort(sorted_arcs.begin(), sorted_arcs.end(), 
+                  [](const std::pair<double, int>& a, const std::pair<double, int>& b) {
+                      return a.first > b.first; 
+                  });
+
+        double current_sum_A = 0.0;
+        double current_sum_B = 0.0;
+        std::vector<int> partition_A;
+        std::vector<int> partition_B;
+
+        // Étape B : On distribue chaque arc dans le tas le plus "léger" à l'instant T
+        for (const auto& item : sorted_arcs) {
+            double flow = item.first;
+            int arc_id = item.second;
+
+            if (current_sum_A <= current_sum_B) {
+                current_sum_A += flow;
+                partition_A.push_back(arc_id);
+            } else {
+                current_sum_B += flow;
+                partition_B.push_back(arc_id);
+            }
+        }
+
+        // On évalue à quel point l'équilibre est parfait (idéalement l'écart est 0)
+        double score = std::abs(current_sum_A - current_sum_B);
+
+        // On sauvegarde si c'est la meilleure partition trouvée pour ce train
+        if (score < best_train_score) {
+            best_train_score = score;
+            best_partition_A = partition_A;
+            best_partition_B = partition_B;
+        }
+            
+
+            best_decision.left_forbidden_arcs = best_partition_B; 
+            best_decision.right_forbidden_arcs = best_partition_A;
+        }
+
+    return best_decision;
+}
+
+
+int BranchAndPriceSolver::add_Column(const Column& col){
+    int new_id = column_pool_.add_column(col);
+    master_.add_column(col, graph_);
+    state_manager_.register_column(col);
+    return new_id;
+}
+
+//Initialisation des différentes parties ensemble. Pour être sur que tout est à jour à l'initialisation on fait bien attention à intialiser
+//les colonnes correspondant au dummy_var dans le global state manager et la column pool (elles se font à la construction du rmp)
+BranchAndPriceSolver::BranchAndPriceSolver(const TimeSpaceGraph& graph, const std::vector<Train>& trains)
+    : 
+    graph_(graph),
+    trains_(trains),
+    master_(graph, trains),
+    pricing_(graph, trains),
+    state_manager_(trains.size(), graph.get_arcs().size()),
+    column_pool_() 
+{
+
+    for(size_t k = 0; k < trains_.size(); k++){
+        Column dummy_col = Column(k, {graph_.get_dummy_arc_id(k)}, std::vector<bool>(graph_.get_nb_services(), true), graph_.get_arc(graph_.get_dummy_arc_id(k)).get_cost(k), k + 1);
+        add_Column(dummy_col);
+    }
+}
+
+void BranchAndPriceSolver::branch_on_node(BPNode* parent, const BranchingDecision& decision){
+    tree_.create_child_node(parent, decision.train_id, decision.left_forbidden_arcs);
+    tree_.create_child_node(parent, decision.train_id, decision.right_forbidden_arcs);
+}
+
+void BranchAndPriceSolver::switch_state(BPNode* target){
+    Trajectory trajectory = tree_.trajectory_to_node(target);
+    for(BPNode* to_rev: trajectory.nodes_to_revert){
+        if(to_rev->train_id == -1){
+            throw std::runtime_error("Trying to revert the root node. There is likely a problem with the computation of the trajectory to switch state in SearchTree");
+        }
+        ColumnList enable = state_manager_.revert_delta(to_rev->train_id, to_rev->forbidden_arcs_ids);
+        master_.enable_columns(enable);
+    }
+    for(BPNode* to_app: trajectory.nodes_to_apply){
+        ColumnList disable = state_manager_.apply_delta(to_app->train_id, to_app->forbidden_arcs_ids);
+        master_.disable_columns(disable);
+    }
+
+}
+
+
+bool BranchAndPriceSolver::is_current_solution_integer() const{
+    switch(tree_.get_current_node()->status)
+    {
+        case(NodeStatus::FRACTIONAL):
+            return false;
+        case(NodeStatus::INTEGER):
+            return true;
+        case(NodeStatus::INFEASIBLE):
+            return false;
+        case(NodeStatus::PROCESSING):
+            throw std::runtime_error("Trying to determine the state of the solution of a processing node");
+        case(NodeStatus::PRUNED):
+            throw std::runtime_error("Trying to determine the state of a pruned node");
+        case(NodeStatus::UNPROCESSED):
+            throw std::runtime_error("Trying to determine the state of an unprocessed node");
+    }
+}

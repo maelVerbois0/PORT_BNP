@@ -4,7 +4,7 @@
 struct Column
 {
     int ID;                // unique id corresponds to the position of the Column 
-    std::vector<int> arc_ids;   // Set of arcs in the path
+    std::vector<int> arc_ids;   // Set of virtual arcs in the path 
     std::vector<bool> services; // Set of services performed by the path
     int cost;              // Total cost of the path
     int train_id;             // id of the associated train

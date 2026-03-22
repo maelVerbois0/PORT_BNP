@@ -8,8 +8,9 @@ enum class NodeStatus {
 };
 
 struct BPNode {
-    // Node depth in the branch and price tree
+    //Parent and children of the BPNode
     BPNode* parent;
+    std::vector<BPNode*> children;
     //Node depth
     int depth;
     // Node lower bound - best lowerbound obtained on this node

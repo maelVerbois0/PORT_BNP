@@ -1,11 +1,32 @@
 #include "PricingProblem.h"
 #include <algorithm>
 #include <iostream>
+#include "GlobalStateManager.h"
 
-PricingProblem::PricingProblem(const TimeSpaceGraph& graph, const std::vector<Train>& trains)
-    : graph_(graph), trains_(trains) {}
+PricingProblem::PricingProblem(const TimeSpaceGraph& graph, const std::vector<Train>& trains):
+graph_(graph), 
+trains_(trains)
+{
+    //On préalloue les structures de la programmation dynamique avec des tailles convenables
+    int max_services = 0;
+    for (const Train& train : trains_) {
+        
+        int nb_services = train.get_services().size(); 
+        if (nb_services > max_services) {
+            max_services = nb_services;
+        }
+    }
+    
+    int max_mask_count = 1 << max_services;
+    int max_total_states = graph_.get_nodes().size() * max_mask_count;
+    
+    // On pré-alloue avec la taille maximale
+    dist_.resize(max_total_states);
+    prev_state_.resize(max_total_states);
+    prev_arc_.resize(max_total_states);
+}
 
-double PricingProblem::get_arc_reduced_cost(int train_id, const Arc& arc, const vector<vector<double>>& conflict_duals) const {
+double PricingProblem::get_arc_reduced_cost(int train_id, const Arc& arc, const std::vector<std::vector<double>>& conflict_duals) const {
     double r_cost = arc.get_cost(train_id);
     int t_s = graph_.get_time_step();
     
@@ -19,13 +40,13 @@ double PricingProblem::get_arc_reduced_cost(int train_id, const Arc& arc, const 
 }
 
 
-vector<Column> PricingProblem::solve(const vector<double>& flow_duals, const vector<vector<double>>& service_duals, const vector<vector<double>>& conflict_duals) const {
-    vector<Column> new_columns;
+std::vector<Column> PricingProblem::solve(const std::vector<double>& flow_duals, const std::vector<std::vector<double>>& service_duals, const std::vector<std::vector<double>>& conflict_duals, const GlobalStateManager& state_manager) const {
+    std::vector<Column> new_columns;
     
     for (const Train& train : trains_) {
         int k = train.get_ID();
         // On lance le pricing pour le train k
-        auto opt_col = find_shortest_path_for_train(k, flow_duals[k - 1], service_duals[k - 1], conflict_duals);
+        auto opt_col = find_shortest_path_for_train(k, flow_duals[k - 1], service_duals[k - 1], conflict_duals, state_manager);
         
         // Si une colonne (chemin de coût réduit < 0) a été trouvée, on l'ajoute
         if (opt_col.has_value()) {
@@ -35,13 +56,13 @@ vector<Column> PricingProblem::solve(const vector<double>& flow_duals, const vec
     return new_columns;
 }
 
-optional<Column> PricingProblem::find_shortest_path_for_train(int train_id, double pi_k, const vector<double>& service_duals_k, const vector<vector<double>>& conflict_duals) const {
+std::optional<Column> PricingProblem::find_shortest_path_for_train(int train_id, double pi_k, const std::vector<double>& service_duals_k, const std::vector<std::vector<double>>& conflict_duals, const GlobalStateManager& state_manager) const{
     
     const Train& train = trains_[train_id - 1];
     int ns = service_duals_k.size();
     
     // 1. Préparation des masques binaires pour les services requis
-    vector<int> service_bit(ns, -1);
+    std::vector<int> service_bit(ns, -1);
     int bit_idx = 0;
     for (int s = 1; s <= ns; s++) {
         if (train.get_service(s)) {
@@ -54,24 +75,27 @@ optional<Column> PricingProblem::find_shortest_path_for_train(int train_id, doub
     int total_states = total_nodes * mask_count;
     
     // 2. Initialisation des structures de la programmation dynamique
-    vector<double> dist(total_states, INF);
-    vector<int> prev_state(total_states, -1);
-    vector<int> prev_arc(total_states, -1);
+    std::fill(dist_.begin(), dist_.begin() + total_states, INF);
+    std::fill(prev_state_.begin(), prev_state_.begin() + total_states, -1);
+    std::fill(prev_arc_.begin(), prev_arc_.begin() + total_states, -1);
     
     // Fonction lambda utile pour aplatir le tableau 2D (Noeud x Masque)
     auto state_index = [&](int node_id, int mask) { return node_id * mask_count + mask; };
     
     // Le départ se fait depuis le nœud source (ID 0) avec aucun service accompli (Masque 0)
-    dist[state_index(0, 0)] = 0.0;
+    dist_[state_index(0, 0)] = 0.0;
 
     // 3. Fonction de relaxation locale
     auto relax_from_node = [&](int node_id) {
         const Node& node = graph_.get_node(node_id);
         
         for (int mask = 0; mask < mask_count; mask++) {
-            double d0 = dist[state_index(node_id, mask)];
+            double d0 = dist_[state_index(node_id, mask)];
             if (d0 >= INF / 2.0) continue; // État inatteignable, on ignore
             for (int a_id : node.getFromArcs()) {
+                if(state_manager.is_arc_forbidden(train_id, a_id)){
+                    continue;
+                }
                 const Arc& arc = graph_.get_arc(a_id);
                 
 
@@ -103,10 +127,10 @@ optional<Column> PricingProblem::find_shortest_path_for_train(int train_id, doub
                 int next_state = state_index(n2, new_mask);
                 
                 // Mise à jour si le nouveau chemin est meilleur
-                if (d < dist[next_state]) {
-                    dist[next_state] = d;
-                    prev_state[next_state] = state_index(node_id, mask);
-                    prev_arc[next_state] = a_id;
+                if (d < dist_[next_state]) {
+                    dist_[next_state] = d;
+                    prev_state_[next_state] = state_index(node_id, mask);
+                    prev_arc_[next_state] = a_id;
                 }
             }
         }
@@ -133,8 +157,8 @@ optional<Column> PricingProblem::find_shortest_path_for_train(int train_id, doub
     int full_mask = mask_count - 1; // Tous les bits à 1 = tous les services requis sont faits
     int s = state_index(1, full_mask); 
     
-    if (dist[s] < best_rcost) {
-        best_rcost = dist[s];
+    if (dist_[s] < best_rcost) {
+        best_rcost = dist_[s];
         best_state = s;
     }
 
@@ -153,13 +177,13 @@ optional<Column> PricingProblem::find_shortest_path_for_train(int train_id, doub
     Column new_col;
     new_col.train_id = train_id;
     new_col.cost = 0; // On va recalculer le vrai coût (sans les duales)
-    new_col.services = vector<bool>(ns, false);
+    new_col.services = std::vector<bool>(ns, false);
     
     int cur = best_state;
-    vector<int> path_arcs;
+    std::vector<int> path_arcs;
     
     while (cur != state_index(0, 0)) {
-        int a_id = prev_arc[cur];
+        int a_id = prev_arc_[cur];
         if (a_id < 0) break;
         path_arcs.push_back(a_id);
         
@@ -170,7 +194,7 @@ optional<Column> PricingProblem::find_shortest_path_for_train(int train_id, doub
             new_col.services[arc.get_service() - 1] = true;
         }
         
-        cur = prev_state[cur];
+        cur = prev_state_[cur];
     }
     
     // On remet les arcs dans le bon ordre chronologique (de la source vers le puits)

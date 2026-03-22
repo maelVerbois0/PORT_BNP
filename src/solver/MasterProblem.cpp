@@ -2,7 +2,6 @@
 #include "gurobi_c++.h"
 #include <memory>
 #include "Column.h"
-#include <iostream>
 
 using namespace std;
 
@@ -11,11 +10,9 @@ MasterProblem::MasterProblem(const TimeSpaceGraph& graph, const vector<Train>& t
     model_ = make_unique<GRBModel>(*env_);
     num_trains_ = trains.size();
     num_pnodes_ = graph.get_nb_pnodes();
-    std::cerr << "Nombre de service dans le graphe : " << graph.get_nb_services() << endl;
     num_services_ = graph.get_nb_services();
     max_time_ = graph.get_horizon();
     time_step_ = graph.get_time_step();
-    dummy_vars_ = vector<GRBVar>(num_trains_);
     flow_constrs_ = vector<GRBConstr>(num_trains_);
     service_constrs_ = vector<vector<GRBConstr>>(num_trains_, vector<GRBConstr>(num_services_));
     service_required_ = vector<vector<bool>>(num_trains_, vector<bool>(num_services_));
@@ -28,19 +25,11 @@ void MasterProblem::build_initial_model(const std::vector<Train>& trains, const 
     GRBLinExpr L;
     
     model_->set(GRB_IntAttr_ModelSense, GRB_MINIMIZE);
-    //Construction des dummy var
-    for (auto& train : trains) 
-    {
-        k = train.get_ID() - 1;
-        double dummy_arc_price = graph.get_arc(graph.get_dummy_arc_id(k)).get_cost(k);
-        dummy_vars_[k] = model_->addVar(0., 1., dummy_arc_price, GRB_CONTINUOUS, "Dummy var of train" + to_string(k + 1));
-    }
+
     //Contraintes de flots
     for(auto& train : trains){
-        L = 0;
-        k = train.get_ID() - 1;
-        L += dummy_vars_[k];
-        flow_constrs_[k] = model_->addConstr(L, GRB_GREATER_EQUAL, 1.0, "Flow train " + to_string(k + 1));
+        int k = train.get_ID() - 1;
+        flow_constrs_[k] = model_->addConstr(0.0 , GRB_GREATER_EQUAL, 1.0, "Flow train " + to_string(k + 1));
     }
 
     //Construction des contraintes de services (une par train et une par service)
@@ -51,7 +40,7 @@ void MasterProblem::build_initial_model(const std::vector<Train>& trains, const 
         {
             if (service_required_[k][s])
             {
-                service_constrs_[k][s] = model_->addConstr(dummy_vars_[k],GRB_GREATER_EQUAL, 1.0, "Train " + to_string(k + 1) + " service " + to_string(s));
+                service_constrs_[k][s] = model_->addConstr(0.0, GRB_GREATER_EQUAL, 1.0, "Train " + to_string(k + 1) + " service " + to_string(s));
             }
         }
 
@@ -97,8 +86,6 @@ std::vector<double> MasterProblem::get_flow_duals() const{
 std::vector<std::vector<double>> MasterProblem::get_service_duals() const{
     std::vector<std::vector<double>> service_duals(num_trains_, std::vector<double>(num_services_, 0.));
     for(int k  = 0; k < num_trains_; k++){
-        std::cerr << "La longueur du nombre de service required pour le train " << k + 1<< " est : " << service_required_.size() << endl;
-        std::cerr << "Le nombre de servide est :" << num_services_ << endl;
         for(int s = 0; s < num_services_; s++){
             
             if(service_required_[k][s]) {
@@ -124,17 +111,11 @@ void MasterProblem::convert_to_integer() {
     for (GRBVar& var : column_vars_) {
         var.set(GRB_CharAttr_VType, GRB_BINARY);
     }
-    for (GRBVar& var : dummy_vars_) {
-        var.set(GRB_CharAttr_VType, GRB_BINARY);
-    }
     model_->update(); 
 }
 
 void MasterProblem::convert_to_continuous() {
     for (GRBVar& var : column_vars_) {
-        var.set(GRB_CharAttr_VType, GRB_CONTINUOUS);
-    }
-    for (GRBVar& var : dummy_vars_) {
         var.set(GRB_CharAttr_VType, GRB_CONTINUOUS);
     }
     model_->update(); 
@@ -148,7 +129,7 @@ void MasterProblem::add_column(const Column& col, const TimeSpaceGraph& graph) {
 
     // Ajout dans les contraintes de service
     for (int s_id = 1; s_id <= num_services_; ++s_id) {
-        if (col.services[s_id - 1]) {
+        if (col.services[s_id - 1] && service_required_[col.train_id - 1][s_id - 1]) {
             grb_col.addTerm(1.0, service_constrs_[col.train_id - 1][s_id - 1]);
         }
     }
@@ -190,4 +171,20 @@ std::vector<int> MasterProblem::get_active_columns_ids() const {
     }
     
     return active_ids;
+}
+
+double MasterProblem::get_column_value(int id) const{
+    return column_vars_[id].get(GRB_DoubleAttr_X);
+}
+
+void MasterProblem::enable_columns(const std::vector<int>& col_id){
+    for(int id : col_id){
+        column_vars_[id].set(GRB_DoubleAttr_UB, GRB_INFINITY);
+    }
+}
+
+void MasterProblem::disable_columns(const std::vector<int>& col_id){
+    for(int id : col_id){
+        column_vars_[id].set(GRB_DoubleAttr_UB, 0.0);
+    }
 }

@@ -19,8 +19,7 @@ private:
     int time_step_;
 
     // --- Variables ---
-    std::vector<GRBVar> column_vars_{}; 
-    std::vector<GRBVar> dummy_vars_{};
+    std::vector<GRBVar> column_vars_{};  //On suppose que les num_trains première variable sont les dummy variables pour chaque train 
 
     // --- Contraintes (Fini les tableaux plats !) ---
     // 1. Contraintes de flux (1 chemin par train) : Taille [num_trains]
@@ -51,10 +50,12 @@ public:
     std::vector<double> get_flow_duals() const;                            // Retourne Pi
     std::vector<std::vector<double>> get_service_duals() const;            // Retourne Alpha
     std::vector<std::vector<double>> get_conflict_duals() const;           // Retourne Mu
-
+    double get_column_value(int id) const;
     // --- Ajout dynamique ---
     // Reçoit une colonne, crée la GRBVar correspondante, et met des "1" dans les bonnes contraintes
     void add_column(const Column& col, const TimeSpaceGraph& graph);
+    void enable_columns(const std::vector<int>& col_id);
+    void disable_columns(const std::vector<int>& col_id);
 
     // --- Phase Finale (Résolution Entière) ---
     void convert_to_integer();
