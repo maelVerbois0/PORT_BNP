@@ -62,6 +62,9 @@ set(
 
     src/solver/MasterProblem.cpp
     src/solver/PricingProblem.cpp
+    src/solver/GlobalStateManager.cpp
+    src/solver/SearchTree.cpp
+    src/solver/BranchAndPriceSolver.cpp
 
 )
 ################# Libraries #################
