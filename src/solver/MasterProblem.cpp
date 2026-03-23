@@ -2,10 +2,12 @@
 #include "gurobi_c++.h"
 #include <memory>
 #include "Column.h"
+#include <stdexcept>
 
 using namespace std;
 
-MasterProblem::MasterProblem(const TimeSpaceGraph& graph, const vector<Train>& trains){
+MasterProblem::MasterProblem(const TimeSpaceGraph& graph, const vector<Train>& trains):status_(MasterStatus::UNSOLVED)
+{
     env_ = make_unique<GRBEnv>();
     model_ = make_unique<GRBModel>(*env_);
     num_trains_ = trains.size();
@@ -61,6 +63,7 @@ void MasterProblem::build_initial_model(const std::vector<Train>& trains, const 
 
 void MasterProblem::solve(){
     model_->optimize();
+    status_ = MasterStatus::SOLVED;
 }
 
 bool MasterProblem::is_optimal() const{
@@ -111,14 +114,16 @@ void MasterProblem::convert_to_integer() {
     for (GRBVar& var : column_vars_) {
         var.set(GRB_CharAttr_VType, GRB_BINARY);
     }
-    model_->update(); 
+    model_->update();
+    status_ = MasterStatus::UNSOLVED;
 }
 
 void MasterProblem::convert_to_continuous() {
     for (GRBVar& var : column_vars_) {
         var.set(GRB_CharAttr_VType, GRB_CONTINUOUS);
     }
-    model_->update(); 
+    model_->update();
+    status_ = MasterStatus::UNSOLVED;
 }
 
 void MasterProblem::add_column(const Column& col, const TimeSpaceGraph& graph) {
@@ -155,6 +160,7 @@ void MasterProblem::add_column(const Column& col, const TimeSpaceGraph& graph) {
     );
 
     column_vars_.push_back(new_var);
+    status_ = MasterStatus::UNSOLVED;
 }
 
 MasterProblem::~MasterProblem() {
@@ -181,10 +187,36 @@ void MasterProblem::enable_columns(const std::vector<int>& col_id){
     for(int id : col_id){
         column_vars_[id].set(GRB_DoubleAttr_UB, GRB_INFINITY);
     }
+    status_ = MasterStatus::UNSOLVED;
 }
 
 void MasterProblem::disable_columns(const std::vector<int>& col_id){
     for(int id : col_id){
         column_vars_[id].set(GRB_DoubleAttr_UB, 0.0);
     }
+    status_ = MasterStatus::UNSOLVED;
+}
+
+MasterStatus MasterProblem::get_master_status() const {
+    return status_;
+}
+
+bool MasterProblem::is_sol_integer() const {
+    if(status_ == MasterStatus::UNSOLVED){
+        throw std::runtime_error("Trying to determine the nature of the solution of an unsolved model !");
+    }
+    const std::vector<int> active_id = get_active_columns_ids();
+    for(int id : active_id){
+        if(get_column_value(id) < 1 - 1e-5){
+            return false;
+        }
+    }
+    return true;
+}
+
+bool MasterProblem::is_sol_fractional() const {
+    if(status_ == MasterStatus::UNSOLVED){
+        throw std::runtime_error("Trying to determine the nature of the solution of an unsolved model !");
+    }
+    return !is_sol_integer();
 }

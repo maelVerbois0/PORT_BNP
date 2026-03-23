@@ -22,6 +22,15 @@ public:
     const Column& get_column(int id) const {
         return columns_[id];
     }
+
+    const std::vector<Column> get_columns(std::vector<int> ids){
+        std::vector<Column> incumbent;
+        incumbent.reserve(ids.size());
+        for(int i = 0; i < ids.size(); i++){
+            incumbent[i] = get_column(ids[i]);
+        }
+        return incumbent;
+    }
     const std::vector<Column>& get_all_columns() const {
         return columns_;
     }

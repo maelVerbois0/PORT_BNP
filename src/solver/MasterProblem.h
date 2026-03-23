@@ -7,6 +7,11 @@
 #include "TimeSpaceGraph.h"
 #include "Train.h"
 
+enum class MasterStatus{
+    SOLVED,
+    UNSOLVED
+};
+
 class MasterProblem {
 private:
     std::unique_ptr<GRBEnv> env_;
@@ -17,6 +22,7 @@ private:
     int num_pnodes_;
     int max_time_;
     int time_step_;
+    MasterStatus status_;
 
     // --- Variables ---
     std::vector<GRBVar> column_vars_{};  //On suppose que les num_trains première variable sont les dummy variables pour chaque train 
@@ -46,11 +52,15 @@ public:
     double get_objective_value() const;
 
     // --- Extraction des variables duales ---
-    // Ces méthodes remplaceront ton ancien `build_dual_vectors`
+
     std::vector<double> get_flow_duals() const;                            // Retourne Pi
     std::vector<std::vector<double>> get_service_duals() const;            // Retourne Alpha
     std::vector<std::vector<double>> get_conflict_duals() const;           // Retourne Mu
     double get_column_value(int id) const;
+    MasterStatus get_master_status() const;
+
+    bool is_sol_integer() const; 
+    bool is_sol_fractional() const;
     // --- Ajout dynamique ---
     // Reçoit une colonne, crée la GRBVar correspondante, et met des "1" dans les bonnes contraintes
     void add_column(const Column& col, const TimeSpaceGraph& graph);

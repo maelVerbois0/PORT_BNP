@@ -5,10 +5,9 @@
 #include <map>
 #include <cmath>
 #include <algorithm>
-#include <optional>
 #include <stdexcept>
 
-std::optional<BranchingDecision> BranchAndPriceSolver::choose_branching_variable() const {
+BranchingDecision BranchAndPriceSolver::choose_branching_variable() const {
     
     // Structure locale pour stocker temporairement nos chemins fractionnaires
     struct FractionalPath {
@@ -37,6 +36,7 @@ std::optional<BranchingDecision> BranchAndPriceSolver::choose_branching_variable
     BranchingDecision best_decision;
 
     // 2. Recherche du noeud de divergence pour chaque train
+    double best_train_score = 1e9;
     for (const auto& [train_id, paths] : train_fractional_paths) {
         if (paths.empty()) continue;
 
@@ -76,14 +76,11 @@ std::optional<BranchingDecision> BranchAndPriceSolver::choose_branching_variable
                 outgoing_arc_flows[p.col->arc_ids[divergence_idx]] += p.flow;
             }
         } else {
-            // Cas très rare : Un seul chemin fractionnaire (par exemple équilibré avec une variable dummy)
-            // On force le branchement sur son premier arc
-            outgoing_arc_flows[paths[0].col->arc_ids[0]] += total_fractional_flow;
+            throw std::runtime_error("Solution fractionnaire sans divergence, il y a probablement plusieurs fois la même colonne qui a été ajoutée !");
         }
 
         
-        double best_train_score = 1e9;
-        std::vector<int> best_partition_A, best_partition_B;
+        
 
         // 4. Partitionnement 50/50 avec Heuristique de Packing (Gloutonne)
         
@@ -121,17 +118,15 @@ std::optional<BranchingDecision> BranchAndPriceSolver::choose_branching_variable
         // On évalue à quel point l'équilibre est parfait (idéalement l'écart est 0)
         double score = std::abs(current_sum_A - current_sum_B);
 
-        // On sauvegarde si c'est la meilleure partition trouvée pour ce train
+        // On sauvegarde si c'est la meilleure partition trouvée 
         if (score < best_train_score) {
             best_train_score = score;
-            best_partition_A = partition_A;
-            best_partition_B = partition_B;
+            best_decision.train_id = train_id;
+            best_decision.right_forbidden_arcs = partition_A;
+            best_decision.left_forbidden_arcs = partition_B;
         }
-            
 
-            best_decision.left_forbidden_arcs = best_partition_B; 
-            best_decision.right_forbidden_arcs = best_partition_A;
-        }
+    }
 
     return best_decision;
 }
@@ -153,6 +148,7 @@ BranchAndPriceSolver::BranchAndPriceSolver(const TimeSpaceGraph& graph, const st
     master_(graph, trains),
     pricing_(graph, trains),
     state_manager_(trains.size(), graph.get_arcs().size()),
+    tree_(),
     column_pool_() 
 {
 
@@ -200,4 +196,78 @@ bool BranchAndPriceSolver::is_current_solution_integer() const{
         case(NodeStatus::UNPROCESSED):
             throw std::runtime_error("Trying to determine the state of an unprocessed node");
     }
+}
+
+
+//The column generation algorithm suppose the state has been altered to reflect the node trying to be processed
+bool BranchAndPriceSolver::run_column_generation(BPNode* node){
+    if(node->status != NodeStatus::UNPROCESSED){
+        throw std::runtime_error("Trying to run column generation on an already processed or processing node !");
+    }
+    node->status = NodeStatus::PROCESSING;
+    while(true){
+        master_.solve();
+        if(!master_.is_infeasible() && !master_.is_optimal()){
+            throw std::runtime_error("Error while trying to solve the master problem at a given node");
+        }
+        
+        const std::vector<double> flow_duals = master_.get_flow_duals();
+        const std::vector<std::vector<double>> service_duals = master_.get_service_duals();
+        const std::vector<std::vector<double>> conflict_duals = master_.get_conflict_duals();
+        
+        std::vector<Column> add_cols = pricing_.solve(flow_duals, service_duals, conflict_duals, state_manager_);
+
+        if(add_cols.empty()){
+            node->lower_bound = master_.get_objective_value();
+            if (master_.is_sol_integer()){
+                node->status=NodeStatus::INTEGER;
+                node->lower_bound = master_.get_objective_value();
+                if(tree_.get_best_upper_bound() > master_.get_objective_value()){
+                    const std::vector<int> active_id = master_.get_active_columns_ids();
+                    const std::vector<Column> incumbent = column_pool_.get_columns(active_id);
+                    tree_.set_incumbent_solution(master_.get_objective_value(), incumbent);
+                }
+            }
+            if(master_.is_sol_fractional()){
+                node->status = NodeStatus::FRACTIONAL;
+                node->lower_bound = master_.get_objective_value();
+            }
+            if(master_.is_infeasible()){
+                node->status = NodeStatus::INFEASIBLE;
+                node->lower_bound = -INF;
+            }
+            break;
+        }
+
+        for(auto& col : add_cols){
+            add_Column(col);
+        }
+
+    }
+}
+
+
+void BranchAndPriceSolver::solve(){
+    BPNode* current_node = tree_.get_next_node();
+    while(current_node != nullptr){
+        if(current_node->lower_bound >= tree_.get_best_upper_bound()){
+            tree_.prune(current_node);
+            continue;
+        }
+
+        switch_state(current_node);
+        run_column_generation(current_node);
+        if(current_node->status == NodeStatus::FRACTIONAL){
+            BranchingDecision decision = choose_branching_variable();
+            branch_on_node(current_node, decision);
+        }
+    }
+}
+
+double BranchAndPriceSolver::get_optimal_value() const {
+    return tree_.get_best_upper_bound();
+}
+
+std::vector<Column> BranchAndPriceSolver::get_optimal_solution() const{
+    return tree_.get_incumbent_solution();
 }

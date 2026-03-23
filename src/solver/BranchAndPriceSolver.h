@@ -1,7 +1,6 @@
 #pragma once
 
 #include <vector>
-#include <optional>
 #include <tuple>
 
 #include "TimeSpaceGraph.h"
@@ -21,6 +20,19 @@ struct BranchingDecision {
     std::vector<int> right_forbidden_arcs; 
 };
 
+enum class SolutionStatus{
+    OPTIMAL,
+    NOT_FOUND,
+    FEASIBLE,
+    UNFEASIBLE
+};
+
+enum class SolveStatus{
+    OPTIMAL,
+    TIME_LIMIT_REACHED,
+    GAP_TOLERANCE_REACHED,
+    INTERRUPTED
+};
 
 class BranchAndPriceSolver {
 public:
@@ -31,10 +43,10 @@ public:
 private:
     bool run_column_generation(BPNode* node);
     bool is_current_solution_integer() const;
-    std::optional<BranchingDecision> choose_branching_variable() const;
+    BranchingDecision choose_branching_variable() const;
     void branch_on_node(BPNode* parent, const BranchingDecision& decision);
     int add_Column(const Column& col);
-    void switch_state(BPNode* Node);
+    void switch_state(BPNode* target);
 
     const TimeSpaceGraph& graph_;
     const std::vector<Train>& trains_;
@@ -44,4 +56,6 @@ private:
     GlobalStateManager state_manager_;
     SearchTree tree_;
     ColumnPool column_pool_;
+
+    constexpr static double INF = 1e+9;
 };

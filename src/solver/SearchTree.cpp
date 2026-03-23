@@ -1,5 +1,6 @@
 #include "SearchTree.h"
 #include <stdexcept>
+#include <algorithm>
 
 // Constructeur par défaut (Arbre vide)
 SearchTree::SearchTree():
@@ -9,7 +10,7 @@ SearchTree::SearchTree():
     current_node_(nullptr)
 {
 
-    auto root = std::make_unique<BPNode>(
+    auto root = std::make_unique<BPNode>(BPNode{
         nullptr,                    // parent
         std::vector<BPNode*>(),     // children
         0,                          // depth
@@ -17,7 +18,7 @@ SearchTree::SearchTree():
         NodeStatus::UNPROCESSED,    // status
         -1,                         // train_id
         std::vector<int>()          // forbidden_arcs_ids
-    );
+    });
     
     current_node_ = root.get();
     add_node_to_queues(root.get());
@@ -32,9 +33,9 @@ SearchTree::SearchTree(const std::vector<Column>& incumbent_solution, double val
     current_strategy_(SearchStrategy::DFS),
     current_node_(nullptr)
 {
-    std::unique_ptr<BPNode> root = std::make_unique<BPNode>(
+    std::unique_ptr<BPNode> root = std::make_unique<BPNode>(BPNode{
         nullptr, std::vector<BPNode*>(), 0, -INF, NodeStatus::UNPROCESSED, -1, std::vector<int>()
-    );
+    });
     
     current_node_ = root.get();
     add_node_to_queues(root.get());
@@ -50,6 +51,17 @@ void SearchTree::set_strategy_DFS() {
 
 void SearchTree::set_strategy_BBF() {
     current_strategy_ = SearchStrategy::BBF;
+    
+    // Transfert de sauvetage : on récupère les branches inexplorées du plongeon DFS
+    while (!open_node_DFS_.empty()) {
+        BPNode* node = open_node_DFS_.top();
+        open_node_DFS_.pop();
+        
+        // On ne transfère que les nœuds qui n'ont pas encore été traités
+        if (node->status == NodeStatus::UNPROCESSED) {
+            open_node_BBF_.push(node);
+        }
+    }
 }
 
 BPNode* SearchTree::get_next_node() {
@@ -58,26 +70,26 @@ BPNode* SearchTree::get_next_node() {
             BPNode* candidate = open_node_DFS_.top();
             open_node_DFS_.pop();
             
-            // On ignore les nœuds élagués !
-            if (candidate->status != NodeStatus::PRUNED) {
-                current_node_ = candidate;
+            if (candidate->status == NodeStatus::UNPROCESSED) {
                 return candidate;
             }
         }
-    } else { // Stratégie BBF
+        set_strategy_BBF(); 
+        return get_next_node();
+        
+    } else {
         while (!open_node_BBF_.empty()) {
             BPNode* candidate = open_node_BBF_.top();
             open_node_BBF_.pop();
             
-            if (candidate->status != NodeStatus::PRUNED) {
-                current_node_ = candidate;
+            if (candidate->status == NodeStatus::UNPROCESSED) {
                 return candidate;
             }
         }
     }
     
     current_node_ = nullptr;
-    return nullptr; // L'arbre a été entièrement exploré
+    return nullptr; // L'arbre entier a été exploré
 }
 
 // --- Construction de l'arbre ---
@@ -109,8 +121,11 @@ BPNode* SearchTree::create_child_node(BPNode* parent, int train_id, const std::v
 }
 
 void SearchTree::add_node_to_queues(BPNode* raw_node) {
-    open_node_DFS_.push(raw_node);
-    open_node_BBF_.push(raw_node);
+    if (current_strategy_ == SearchStrategy::DFS) {
+        open_node_DFS_.push(raw_node);
+    } else {
+        open_node_BBF_.push(raw_node);
+    }
 }
 
 
@@ -158,46 +173,35 @@ Trajectory SearchTree::trajectory_to_node(BPNode* target_node) {
     Trajectory traj;
     if (current_node_ == target_node) return traj;
 
-    // 1. Chemins vers la racine
-    std::vector<BPNode*> path_current;
-    BPNode* temp = current_node_;
-    while (temp != nullptr) {
-        path_current.push_back(temp);
-        temp = temp->parent;
+    BPNode* curr_up = current_node_;
+    BPNode* curr_down = target_node;
+
+    // 1. Égaliser les profondeurs
+    while (curr_up && curr_down && curr_up->depth > curr_down->depth) {
+        traj.nodes_to_revert.push_back(curr_up);
+        curr_up = curr_up->parent;
+    }
+    while (curr_up && curr_down && curr_down->depth > curr_up->depth) {
+        traj.nodes_to_apply.push_back(curr_down); // On stocke pour le chemin descendant
+        curr_down = curr_down->parent;
     }
 
-    std::vector<BPNode*> path_target;
-    temp = target_node;
-    while (temp != nullptr) {
-        path_target.push_back(temp);
-        temp = temp->parent;
+    // 2. Remonter jusqu'au LCA
+    while (curr_up != curr_down) {
+        if (curr_up) {
+            traj.nodes_to_revert.push_back(curr_up);
+            curr_up = curr_up->parent;
+        }
+        if (curr_down) {
+            traj.nodes_to_apply.push_back(curr_down);
+            curr_down = curr_down->parent;
+        }
     }
 
-    // 2. Trouver le Plus Proche Ancêtre Commun (LCA)
-    BPNode* lca = nullptr;
-    int i = path_current.size() - 1;
-    int j = path_target.size() - 1;
-    
-    while (i >= 0 && j >= 0 && path_current[i] == path_target[j]) {
-        lca = path_current[i];
-        i--; j--;
-    }
+    // 3. Inverser le chemin descendant (car on l'a construit de bas en haut)
+    std::reverse(traj.nodes_to_apply.begin(), traj.nodes_to_apply.end());
 
-    // 3. Remplir les nœuds à annuler (de current_node_ jusqu'au LCA exclu)
-    temp = current_node_;
-    while (temp != lca && temp != nullptr) {
-        traj.nodes_to_revert.push_back(temp);
-        temp = temp->parent;
-    }
-
-    // 4. Remplir les nœuds à appliquer (du LCA exclu jusqu'au target_node)
-    for (int k = j; k >= 0; k--) {
-        traj.nodes_to_apply.push_back(path_target[k]);
-    }
-
-    // 5. Mise à jour de l'état interne de l'arbre
     current_node_ = target_node;
-
     return traj;
 }
 
