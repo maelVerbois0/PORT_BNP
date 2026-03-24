@@ -125,6 +125,11 @@ void SearchTree::add_node_to_queues(BPNode* raw_node) {
         open_node_DFS_.push(raw_node);
     } else {
         open_node_BBF_.push(raw_node);
+        BPNode* lowest_bound_node = open_node_BBF_.top();
+        if(lowest_bound_node->status == NodeStatus::PRUNED){
+            throw std::runtime_error("The lowest known bound has been pruned meaning bug or convergence to optimality");
+        }
+        set_best_lower_bound(lowest_bound_node->lower_bound);
     }
 }
 
@@ -137,9 +142,6 @@ void SearchTree::prune(BPNode* node) {
     node->forbidden_arcs_ids.clear(); 
     node->forbidden_arcs_ids.shrink_to_fit();
 
-    for (BPNode* child : node->children) {
-        prune(child); 
-    }
 }
 
 // --- Getters & Setters ---

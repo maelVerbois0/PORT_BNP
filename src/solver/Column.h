@@ -13,10 +13,10 @@ struct Column
 class ColumnPool {
 public:
     ColumnPool() = default;
-    int add_column(Column col) {
+    int add_column(Column& col) {
         int new_id = columns_.size();
         col.ID = new_id; 
-        columns_.push_back(std::move(col));
+        columns_.push_back(col);
         return new_id;
     }
     const Column& get_column(int id) const {
@@ -27,7 +27,7 @@ public:
         std::vector<Column> incumbent;
         incumbent.reserve(ids.size());
         for(int i = 0; i < ids.size(); i++){
-            incumbent[i] = get_column(ids[i]);
+            incumbent.push_back(get_column(ids[i]));
         }
         return incumbent;
     }

@@ -132,7 +132,7 @@ BranchingDecision BranchAndPriceSolver::choose_branching_variable() const {
 }
 
 
-int BranchAndPriceSolver::add_Column(const Column& col){
+int BranchAndPriceSolver::add_Column(Column& col){
     int new_id = column_pool_.add_column(col);
     master_.add_column(col, graph_);
     state_manager_.register_column(col);
@@ -200,7 +200,7 @@ bool BranchAndPriceSolver::is_current_solution_integer() const{
 
 
 //The column generation algorithm suppose the state has been altered to reflect the node trying to be processed
-bool BranchAndPriceSolver::run_column_generation(BPNode* node){
+ void BranchAndPriceSolver::run_column_generation(BPNode* node){
     if(node->status != NodeStatus::UNPROCESSED){
         throw std::runtime_error("Trying to run column generation on an already processed or processing node !");
     }
@@ -231,6 +231,9 @@ bool BranchAndPriceSolver::run_column_generation(BPNode* node){
             if(master_.is_sol_fractional()){
                 node->status = NodeStatus::FRACTIONAL;
                 node->lower_bound = master_.get_objective_value();
+                if(node->lower_bound > tree_.get_best_upper_bound() - 1e-5){
+                    node->status = NodeStatus::PRUNED;
+                }
             }
             if(master_.is_infeasible()){
                 node->status = NodeStatus::INFEASIBLE;
@@ -250,17 +253,32 @@ bool BranchAndPriceSolver::run_column_generation(BPNode* node){
 void BranchAndPriceSolver::solve(){
     BPNode* current_node = tree_.get_next_node();
     while(current_node != nullptr){
+        std::cerr << "Current depth : " << current_node->depth << std::endl;
+        std:cerr << "Best known lower bound : " << current_node->lower_bound << std::endl;
         if(current_node->lower_bound >= tree_.get_best_upper_bound()){
             tree_.prune(current_node);
+            current_node = tree_.get_next_node();
             continue;
         }
 
         switch_state(current_node);
+        std::cerr << "Running Column Generation..." << std::endl;
         run_column_generation(current_node);
         if(current_node->status == NodeStatus::FRACTIONAL){
+            std::cerr << "Found a fractionnal solution branching" << std::endl;
             BranchingDecision decision = choose_branching_variable();
             branch_on_node(current_node, decision);
         }
+        else if (current_node -> status == NodeStatus::PRUNED)
+        {
+            std::cerr << "Pruning a node..." << std::endl;
+        }
+        else{
+            std::cerr << "Found an integer solution !!!" << std::endl;
+            std::cerr << "We'll stop the intial dive and start trying to improve the bound" << std::endl;
+            tree_.set_strategy_BBF();
+        }
+        current_node = tree_.get_next_node();
     }
 }
 

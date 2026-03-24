@@ -41,11 +41,11 @@ public:
     double get_optimal_value() const;
     std::vector<Column> get_optimal_solution() const;
 private:
-    bool run_column_generation(BPNode* node);
+    void run_column_generation(BPNode* node);
     bool is_current_solution_integer() const;
     BranchingDecision choose_branching_variable() const;
     void branch_on_node(BPNode* parent, const BranchingDecision& decision);
-    int add_Column(const Column& col);
+    int add_Column(Column& col);
     void switch_state(BPNode* target);
 
     const TimeSpaceGraph& graph_;

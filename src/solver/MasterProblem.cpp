@@ -9,6 +9,8 @@ using namespace std;
 MasterProblem::MasterProblem(const TimeSpaceGraph& graph, const vector<Train>& trains):status_(MasterStatus::UNSOLVED)
 {
     env_ = make_unique<GRBEnv>();
+    env_->set(GRB_StringParam_LogFile, "../gurobi_log.txt");
+    env_->set(GRB_IntParam_LogToConsole, 0);
     model_ = make_unique<GRBModel>(*env_);
     num_trains_ = trains.size();
     num_pnodes_ = graph.get_nb_pnodes();
