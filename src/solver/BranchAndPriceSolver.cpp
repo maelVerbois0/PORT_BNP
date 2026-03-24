@@ -8,7 +8,12 @@
 #include <stdexcept>
 
 BranchingDecision BranchAndPriceSolver::choose_branching_variable() const {
-    
+    return quantum_train_branching();
+}
+
+
+BranchingDecision BranchAndPriceSolver::quantum_train_branching() const {
+        
     // Structure locale pour stocker temporairement nos chemins fractionnaires
     struct FractionalPath {
         const Column* col;
@@ -34,6 +39,12 @@ BranchingDecision BranchAndPriceSolver::choose_branching_variable() const {
     }
 
     BranchingDecision best_decision;
+    best_decision.right_train_ids.resize(1);
+    best_decision.left_train_ids.resize(1);
+    std::vector<int> best_partition_A;
+    std::vector<int> best_partition_B;
+    int best_train_id;
+
 
     // 2. Recherche du noeud de divergence pour chaque train
     double best_train_score = 1e9;
@@ -41,20 +52,11 @@ BranchingDecision BranchAndPriceSolver::choose_branching_variable() const {
         if (paths.empty()) continue;
 
         double total_fractional_flow = 0.0;
-        int min_path_length = 1e9;
-        
-        for (const auto& p : paths) {
-            total_fractional_flow += p.flow;
-            if (p.col->arc_ids.size() < min_path_length) {
-                min_path_length = p.col->arc_ids.size();
-            }
-        }
-
         // Parcours chronologique des arcs pour trouver la première divergence
         int divergence_idx = 0;
         bool diverged = false;
         
-        for (int i = 0; i < min_path_length; ++i) {
+        for (int i = 0; i < paths[0].col->arc_ids.size(); ++i) {
             int first_arc = paths[0].col->arc_ids[i];
             // On vérifie si tous les chemins passent par cet arc à l'étape i
             for (const auto& p : paths) {
@@ -121,16 +123,19 @@ BranchingDecision BranchAndPriceSolver::choose_branching_variable() const {
         // On sauvegarde si c'est la meilleure partition trouvée 
         if (score < best_train_score) {
             best_train_score = score;
-            best_decision.train_id = train_id;
-            best_decision.right_forbidden_arcs = partition_A;
-            best_decision.left_forbidden_arcs = partition_B;
+            best_train_id = train_id;
+            best_partition_A = partition_A;
+            best_partition_B = partition_B;
         }
 
     }
+    best_decision.left_train_ids = {best_train_id};
+    best_decision.right_train_ids = {best_train_id};
+    best_decision.left_forbidden_arcs[best_train_id] = best_partition_A;
+    best_decision.right_forbidden_arcs[best_train_id] = best_partition_B;
 
     return best_decision;
 }
-
 
 int BranchAndPriceSolver::add_Column(Column& col){
     int new_id = column_pool_.add_column(col);
@@ -159,21 +164,21 @@ BranchAndPriceSolver::BranchAndPriceSolver(const TimeSpaceGraph& graph, const st
 }
 
 void BranchAndPriceSolver::branch_on_node(BPNode* parent, const BranchingDecision& decision){
-    tree_.create_child_node(parent, decision.train_id, decision.left_forbidden_arcs);
-    tree_.create_child_node(parent, decision.train_id, decision.right_forbidden_arcs);
+    tree_.create_child_node(parent, decision.left_train_ids, decision.left_forbidden_arcs);
+    tree_.create_child_node(parent, decision.right_train_ids, decision.right_forbidden_arcs);
 }
 
 void BranchAndPriceSolver::switch_state(BPNode* target){
     Trajectory trajectory = tree_.trajectory_to_node(target);
     for(BPNode* to_rev: trajectory.nodes_to_revert){
-        if(to_rev->train_id == -1){
+        if(to_rev->train_ids.size() == 0){
             throw std::runtime_error("Trying to revert the root node. There is likely a problem with the computation of the trajectory to switch state in SearchTree");
         }
-        ColumnList enable = state_manager_.revert_delta(to_rev->train_id, to_rev->forbidden_arcs_ids);
+        ColumnList enable = state_manager_.revert_delta(to_rev->train_ids, to_rev->forbidden_arcs_ids);
         master_.enable_columns(enable);
     }
     for(BPNode* to_app: trajectory.nodes_to_apply){
-        ColumnList disable = state_manager_.apply_delta(to_app->train_id, to_app->forbidden_arcs_ids);
+        ColumnList disable = state_manager_.apply_delta(to_app->train_ids, to_app->forbidden_arcs_ids);
         master_.disable_columns(disable);
     }
 
@@ -252,9 +257,18 @@ bool BranchAndPriceSolver::is_current_solution_integer() const{
 
 void BranchAndPriceSolver::solve(){
     BPNode* current_node = tree_.get_next_node();
+    int iter = 0;
     while(current_node != nullptr){
+        iter++;
+        if(iter%100 == 0){
+            std::cerr << "Let's try a little dive to find a new solution" << std::endl;
+            tree_.set_strategy_DFS();
+        }
+        std::cerr << "Nombre d'itérations : " << iter << std::endl;
         std::cerr << "Current depth : " << current_node->depth << std::endl;
-        std:cerr << "Best known lower bound : " << current_node->lower_bound << std::endl;
+        std:cerr << "Best known lower bound : " << tree_.get_best_lower_bound() << std::endl;
+        std::cerr << "Best known upper bound : " << tree_.get_best_upper_bound()<< std::endl;
+        std::cerr << "Gap : " << (tree_.get_best_upper_bound() - tree_.get_best_lower_bound())/tree_.get_best_lower_bound() * 100<<"%"<<std::endl;
         if(current_node->lower_bound >= tree_.get_best_upper_bound()){
             tree_.prune(current_node);
             current_node = tree_.get_next_node();
@@ -275,7 +289,8 @@ void BranchAndPriceSolver::solve(){
         }
         else{
             std::cerr << "Found an integer solution !!!" << std::endl;
-            std::cerr << "We'll stop the intial dive and start trying to improve the bound" << std::endl;
+            std::cerr << "It's value : "<<current_node->lower_bound << std::endl;
+            std::cerr << "We'll stop the dive and start trying to improve the bound" << std::endl;
             tree_.set_strategy_BBF();
         }
         current_node = tree_.get_next_node();

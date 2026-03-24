@@ -11,13 +11,12 @@
 #include "SearchTree.h"
 #include "BPNode.h"
 
-// Une petite structure claire pour stocker la décision de branchement
+
 struct BranchingDecision {
-    int train_id;
-    // Les arcs à interdire dans l'enfant de gauche (ex: le premier groupe de 50%)
-    std::vector<int> left_forbidden_arcs;  
-    // Les arcs à interdire dans l'enfant de droite (ex: le deuxième groupe de 50%)
-    std::vector<int> right_forbidden_arcs; 
+    std::vector<int> left_train_ids;
+    std::vector<int> right_train_ids;
+    std::map<int,std::vector<int>> left_forbidden_arcs;  
+    std::map<int, std::vector<int>> right_forbidden_arcs; 
 };
 
 enum class SolutionStatus{
@@ -44,6 +43,9 @@ private:
     void run_column_generation(BPNode* node);
     bool is_current_solution_integer() const;
     BranchingDecision choose_branching_variable() const;
+    BranchingDecision physical_node_branching() const;
+    BranchingDecision quantum_train_branching() const;
+    BranchingDecision service_split_branching() const;
     void branch_on_node(BPNode* parent, const BranchingDecision& decision);
     int add_Column(Column& col);
     void switch_state(BPNode* target);

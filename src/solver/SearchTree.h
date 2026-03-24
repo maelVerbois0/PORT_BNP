@@ -3,6 +3,7 @@
 #include <vector>
 #include <queue>
 #include <stack>
+#include <map>
 #include <memory>
 #include "Column.h"
 #include "BPNode.h"
@@ -38,7 +39,7 @@ public:
     
     // --- Construction de l'arbre ---
     // Crée un nœud enfant, le lie à son parent, gère sa mémoire et l'ajoute aux files d'attente
-    BPNode* create_child_node(BPNode* parent, int train_id, const std::vector<int>& additional_forbidden_arcs);
+    BPNode* create_child_node(BPNode* parent, const std::vector<int>& train_id, const std::map<int,std::vector<int>>& additional_forbidden_arcs);
     void prune(BPNode* node); 
 
     // --- Getters & Setters ---

@@ -2,6 +2,7 @@
 
 #include <tuple>
 #include <vector>
+#include <map>
 
 enum class NodeStatus {
     UNPROCESSED, PROCESSING, FRACTIONAL, INTEGER, INFEASIBLE, PRUNED
@@ -17,10 +18,10 @@ struct BPNode {
     double lower_bound;
     //Status of the BP Node
     NodeStatus status;
-    //Which train the restriction is applied on
-    int train_id;
+    //Which trains the restriction are applied on
+    std::vector<int> train_ids;
     // Subset of forbidden arcs decided in the parent node 
-    std::vector<int> forbidden_arcs_ids;
+    std::map<int,std::vector<int>> forbidden_arcs_ids;
 
 }
 ;

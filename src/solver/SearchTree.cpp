@@ -1,6 +1,9 @@
 #include "SearchTree.h"
 #include <stdexcept>
 #include <algorithm>
+#include <map>
+#include <vector>
+#include <stack>
 
 // Constructeur par défaut (Arbre vide)
 SearchTree::SearchTree():
@@ -16,8 +19,8 @@ SearchTree::SearchTree():
         0,                          // depth
         -INF,                       // lower_bound
         NodeStatus::UNPROCESSED,    // status
-        -1,                         // train_id
-        std::vector<int>()          // forbidden_arcs_ids
+        std::vector<int>(),                         // train_ids
+        std::map<int, std::vector<int>>()          // forbidden_arcs_ids
     });
     
     current_node_ = root.get();
@@ -34,7 +37,7 @@ SearchTree::SearchTree(const std::vector<Column>& incumbent_solution, double val
     current_node_(nullptr)
 {
     std::unique_ptr<BPNode> root = std::make_unique<BPNode>(BPNode{
-        nullptr, std::vector<BPNode*>(), 0, -INF, NodeStatus::UNPROCESSED, -1, std::vector<int>()
+        nullptr, std::vector<BPNode*>(), 0, -INF, NodeStatus::UNPROCESSED, std::vector<int>(), std::map<int, std::vector<int>>()
     });
     
     current_node_ = root.get();
@@ -94,7 +97,7 @@ BPNode* SearchTree::get_next_node() {
 
 // --- Construction de l'arbre ---
 
-BPNode* SearchTree::create_child_node(BPNode* parent, int train_id, const std::vector<int>& additional_forbidden_arcs) {
+BPNode* SearchTree::create_child_node(BPNode* parent, const std::vector<int>& train_ids, const std::map <int, std::vector<int>>& additional_forbidden_arcs) {
     if (parent == nullptr) throw std::runtime_error("Cannot create a child without a parent.");
 
 
@@ -105,7 +108,7 @@ BPNode* SearchTree::create_child_node(BPNode* parent, int train_id, const std::v
         parent->depth + 1,          
         parent->lower_bound,        
         NodeStatus::UNPROCESSED,    
-        train_id,                   
+        train_ids,                   
         additional_forbidden_arcs               
     );
 
@@ -140,7 +143,8 @@ void SearchTree::prune(BPNode* node) {
     node->status = NodeStatus::PRUNED;
 
     node->forbidden_arcs_ids.clear(); 
-    node->forbidden_arcs_ids.shrink_to_fit();
+    node->train_ids.clear();
+    node->train_ids.shrink_to_fit();
 
 }
 
@@ -159,7 +163,7 @@ void SearchTree::set_best_upper_bound(double upper_bound) {
 }
 
 void SearchTree::set_best_lower_bound(double lower_bound) {
-    if (lower_bound < best_lower_bound_) {
+    if (lower_bound + 1e-5 < best_lower_bound_) {
         throw std::runtime_error("Trying to set a lower bound that is worse than the current one.");
     }
     best_lower_bound_ = lower_bound;

@@ -2,6 +2,7 @@
 #include "Column.h"
 #include <stdexcept>
 #include <string>
+#include <map>
 
 GlobalStateManager::GlobalStateManager(int num_trains, int num_arcs):
 num_trains_(num_trains),
@@ -28,7 +29,27 @@ void GlobalStateManager::register_column(const Column& col){
      conflict_count_.push_back(0);
 }
 
-ColumnList GlobalStateManager::apply_delta(int train_id, const std::vector<int>& forbidden_arcs){
+
+ColumnList GlobalStateManager::apply_delta(const std::vector<int>& train_ids, const std::map<int, std::vector<int>>& forbidden_arcs){
+    ColumnList L{};
+    for(int train_id : train_ids){
+        ColumnList l = apply_delta_single_train(train_id, forbidden_arcs.at(train_id));
+        L.insert(L.end(), l.begin(), l.end());
+    }
+    return L;
+}
+
+ColumnList GlobalStateManager::revert_delta(const std::vector<int>& train_ids, const std::map<int, std::vector<int>>& forbidden_arcs){
+    ColumnList L{};
+    for(int train_id : train_ids){
+        ColumnList l = revert_delta_single_train(train_id, forbidden_arcs.at(train_id));
+        L.insert(L.end(), l.begin(), l.end());
+    }
+    return L;
+}
+
+
+ColumnList GlobalStateManager::apply_delta_single_train(int train_id, const std::vector<int>& forbidden_arcs){
     train_id --;
     ColumnList to_remove{};
     for(int arc_id: forbidden_arcs){
@@ -43,7 +64,7 @@ ColumnList GlobalStateManager::apply_delta(int train_id, const std::vector<int>&
     return to_remove;
 }
 
-ColumnList GlobalStateManager::revert_delta(int train_id, const std::vector<int>& forbidden_arcs){
+ColumnList GlobalStateManager::revert_delta_single_train(int train_id, const std::vector<int>& forbidden_arcs){
     train_id--;
     ColumnList to_add_back{};
     for(int arc_id: forbidden_arcs){
