@@ -65,6 +65,8 @@ set(
     src/solver/GlobalStateManager.cpp
     src/solver/SearchTree.cpp
     src/solver/BranchAndPriceSolver.cpp
+    src/solver/MFABSolver.cpp 
+    src/solver/MFAB2solver.cpp
 
 )
 ################# Libraries #################
@@ -86,3 +88,19 @@ target_link_libraries(tusp_core PUBLIC gurobi)
 # Create the column generation executable
 add_executable(tusp_solver src/test_column_generation.cpp)
 target_link_libraries(tusp_solver PUBLIC tusp_core)
+
+
+
+# Utilise des guillemets à cause du caractère spécial '&'
+add_executable(test_bp "src/test_B&P.cpp")
+target_link_libraries(test_bp PUBLIC tusp_core)
+
+
+
+# Ajouter l'exécutable pour le test MFAB
+add_executable(test_mfab "src/test_mfab.cpp")
+target_link_libraries(test_mfab PUBLIC tusp_core)
+
+
+add_executable(test_mfab2 "src/test_mfab2.cpp")
+target_link_libraries(test_mfab2 PUBLIC tusp_core)

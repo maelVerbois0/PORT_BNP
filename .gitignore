@@ -13,3 +13,15 @@ results**.txt
 
 #Zone identifier
 *.Zone.Identifier 
+
+# Logs de solveurs
+gurobi_log.txt
+*.log
+
+# Fichiers auxiliaires LaTeX
+*.aux
+*.log
+*.toc
+*.out
+*.pdf
+*.synctex.gz
