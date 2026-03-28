@@ -19,13 +19,14 @@ private:
     int type{0};
     int a_t{0};
     int d_t{0};
-    vector<bool> services{}; 
+    vector<bool> services{};
+    int nb_services_required_; 
 
 public:
     Train(int id, string n, int t, int a, int d, int ns);
     Train() = default;
 
-    void set_service(int s) { services[s - 1] = true; }
+    void set_service(int s);
     int get_ID() const;
     string get_name() const;
     int get_type() const;
@@ -33,7 +34,8 @@ public:
     int get_d_t() const;
 
     vector<bool> get_services() const;
-    bool get_service(int s) const { return services[s - 1]; }
+    bool get_service(int s) const { return services[s]; }
+    int get_nb_services_required() const {return nb_services_required_;}
 };
 
 /*

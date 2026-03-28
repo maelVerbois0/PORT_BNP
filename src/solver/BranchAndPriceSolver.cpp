@@ -11,6 +11,52 @@ BranchingDecision BranchAndPriceSolver::choose_branching_variable() const {
     return quantum_train_branching();
 }
 
+BranchingDecision BranchAndPriceSolver::service_split_branching() const {
+    struct FractionalPath {
+        const Column* col;
+        double flow;
+    };
+
+        // 1. Récupération des chemins fractionnaires triés par train
+    std::map<int, std::vector<FractionalPath>> train_fractional_paths;
+    
+    std::vector<int> active_ids = master_.get_active_columns_ids();
+    for (int id : active_ids) {
+        double val = master_.get_column_value(id);
+        // On cible strictement les variables fractionnaires (exclut les 0 et les 1)
+        if (val > 1e-5 && val < 1.0 - 1e-5) {
+            const Column& col = column_pool_.get_column(id);
+            train_fractional_paths[col.train_id].push_back({&col, val});
+        }
+    }
+
+    // Si tout est entier (ou vide), on s'arrête là !
+    if (train_fractional_paths.empty()) {
+        throw std::runtime_error("Trying to apply branching on an integer solution !");
+    }
+
+    BranchingDecision decision;
+    decision.right_train_ids.resize(1);
+    decision.left_train_ids.resize(1);
+    std::vector<int> partition_A;
+    std::vector<int> partition_B;
+    
+    // 2. On cherche un train qui effectue ces services à deux instants différents
+    for(const auto &[train_id, paths] : train_fractional_paths){
+        const Train& current_train = trains_.at(train_id);
+        std::vector<int> first_known_time_for_service(current_train.get_nb_services_required(), -1);
+        for(const auto& path: paths){
+            for(int arc_id : path.col->arc_ids){
+                const auto& arc = graph_.get_arc(arc_id);
+                if(arc.get_service() != -1){
+                    first_known_time_for_service[arc.get_service()] = arc.get_start_time();
+                }
+            }
+        }
+
+    }
+
+}
 
 BranchingDecision BranchAndPriceSolver::quantum_train_branching() const {
         
@@ -158,7 +204,7 @@ BranchAndPriceSolver::BranchAndPriceSolver(const TimeSpaceGraph& graph, const st
 {
 
     for(size_t k = 0; k < trains_.size(); k++){
-        Column dummy_col = Column(k, {graph_.get_dummy_arc_id(k)}, std::vector<bool>(graph_.get_nb_services(), true), graph_.get_arc(graph_.get_dummy_arc_id(k)).get_cost(k), k + 1);
+        Column dummy_col = Column(k, {graph_.get_dummy_arc_id(k)}, std::vector<bool>(graph_.get_nb_services(), true), graph_.get_arc(graph_.get_dummy_arc_id(k)).get_cost(k), k);
         add_Column(dummy_col);
     }
 }
@@ -215,15 +261,21 @@ bool BranchAndPriceSolver::is_current_solution_integer() const{
         if(!master_.is_infeasible() && !master_.is_optimal()){
             throw std::runtime_error("Error while trying to solve the master problem at a given node");
         }
+
+        if(master_.is_infeasible()){
+            std::cerr << "Master problem is genuinely INFEASIBLE at this node." << std::endl;
+            node->status = NodeStatus::INFEASIBLE;
+            node->lower_bound = -INF;
+            break;
+        }
         
         const std::vector<double> flow_duals = master_.get_flow_duals();
         const std::vector<std::vector<double>> service_duals = master_.get_service_duals();
         const std::vector<std::vector<double>> conflict_duals = master_.get_conflict_duals();
-        
         std::vector<Column> add_cols = pricing_.solve(flow_duals, service_duals, conflict_duals, state_manager_);
 
-        if(add_cols.empty()){
-            node->lower_bound = master_.get_objective_value();
+        if(add_cols.empty()){  
+            std::cerr << "The solve ended with status: " << master_.get_gurobi_status() << std::endl;
             if (master_.is_sol_integer()){
                 node->status=NodeStatus::INTEGER;
                 node->lower_bound = master_.get_objective_value();
@@ -234,15 +286,12 @@ bool BranchAndPriceSolver::is_current_solution_integer() const{
                 }
             }
             if(master_.is_sol_fractional()){
+                node->lower_bound = master_.get_objective_value();
                 node->status = NodeStatus::FRACTIONAL;
                 node->lower_bound = master_.get_objective_value();
                 if(node->lower_bound > tree_.get_best_upper_bound() - 1e-5){
                     node->status = NodeStatus::PRUNED;
                 }
-            }
-            if(master_.is_infeasible()){
-                node->status = NodeStatus::INFEASIBLE;
-                node->lower_bound = -INF;
             }
             break;
         }
@@ -258,12 +307,22 @@ bool BranchAndPriceSolver::is_current_solution_integer() const{
 void BranchAndPriceSolver::solve(){
     BPNode* current_node = tree_.get_next_node();
     int iter = 0;
+    int iter_DFS;
     while(current_node != nullptr){
         iter++;
-        if(iter%100 == 0){
+
+        if(iter%100 == 0 && tree_.get_current_strategy() == SearchStrategy::BBF){
             std::cerr << "Let's try a little dive to find a new solution" << std::endl;
             tree_.set_strategy_DFS();
+            iter_DFS = 0;
         }
+        if(tree_.get_current_strategy() == SearchStrategy::DFS){
+            iter_DFS++;
+            if(iter_DFS > 50){
+                tree_.set_strategy_BBF();
+            }
+        }
+
         std::cerr << "Nombre d'itérations : " << iter << std::endl;
         std::cerr << "Current depth : " << current_node->depth << std::endl;
         std:cerr << "Best known lower bound : " << tree_.get_best_lower_bound() << std::endl;
@@ -276,18 +335,33 @@ void BranchAndPriceSolver::solve(){
         }
 
         switch_state(current_node);
+        //Running the integer model to get some integer solution
+        if(current_node->depth %20 == 0 && current_node->depth >=19){
+            master_.convert_to_integer();
+            master_.solve();
+            if(master_.is_infeasible()){
+                continue;
+            }
+            if(master_.get_objective_value() < tree_.get_best_upper_bound()){
+                const std::vector<int> active_id = master_.get_active_columns_ids();
+                const std::vector<Column> incumbent = column_pool_.get_columns(active_id);
+                tree_.set_incumbent_solution(master_.get_objective_value(), incumbent);
+
+            }
+            master_.convert_to_continuous();
+        }
         std::cerr << "Running Column Generation..." << std::endl;
         run_column_generation(current_node);
+        
         if(current_node->status == NodeStatus::FRACTIONAL){
             std::cerr << "Found a fractionnal solution branching" << std::endl;
             BranchingDecision decision = choose_branching_variable();
             branch_on_node(current_node, decision);
         }
-        else if (current_node -> status == NodeStatus::PRUNED)
-        {
+        else if (current_node -> status == NodeStatus::PRUNED){
             std::cerr << "Pruning a node..." << std::endl;
         }
-        else{
+        else if (current_node -> status == NodeStatus::INTEGER){
             std::cerr << "Found an integer solution !!!" << std::endl;
             std::cerr << "It's value : "<<current_node->lower_bound << std::endl;
             std::cerr << "We'll stop the dive and start trying to improve the bound" << std::endl;

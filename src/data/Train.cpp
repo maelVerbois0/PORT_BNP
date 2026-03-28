@@ -1,7 +1,7 @@
 #include "Train.h"
 using namespace std;
 
-Train::Train(int id, string n, int t, int a, int b, int ns):ID(id),name(n),type(t),a_t(a),d_t(b)
+Train::Train(int id, string n, int t, int a, int b, int ns):ID(id),name(n),type(t),a_t(a),d_t(b), nb_services_required_(0)
 {
     for (int s = 0; s < ns; s++)
     {
@@ -33,6 +33,14 @@ int Train::get_d_t() const
 vector<bool> Train::get_services() const
 {
     return services;
+}
+
+void Train::set_service(int s){
+    if(services[s]){
+        return;
+    }
+    services[s] = true;
+    nb_services_required_++;
 }
 
 TrainType::TrainType(int id, string n, int w, int t):ID(id),name(n),w_shu(w),t_turn(t)

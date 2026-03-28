@@ -12,7 +12,7 @@ Their id, name, fixed cost and duration
 struct Service
 {
 private:
-    int ID = 0;
+    int ID = -1;
     std::string name = "default";
     int cost = 0;
     int duration = 0;

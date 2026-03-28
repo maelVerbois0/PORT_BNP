@@ -57,10 +57,10 @@ bool NodeType::getDwelling() const
 }
 bool NodeType::getService(int i) const
 {
-    if (i <= 0 || i > static_cast<int>(services.size()))
+    if (i < 0 || i > static_cast<int>(services.size()))
     {
         throw std::runtime_error("Error index out of bound index for a service, index queried was " + to_string(i) 
                                 + "The bound are " + to_string(0) + ", " + to_string(static_cast<int>(services.size())));
     }
-    return services[i - 1];
+    return services[i];
 }

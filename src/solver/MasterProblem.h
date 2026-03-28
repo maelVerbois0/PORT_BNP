@@ -50,6 +50,7 @@ public:
     bool is_optimal() const;
     bool is_infeasible() const;
     double get_objective_value() const;
+    int get_gurobi_status() const;
 
     // --- Extraction des variables duales ---
 

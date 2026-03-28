@@ -43,18 +43,17 @@ const Arc& TimeSpaceGraph::get_arc(int id) const{
 }
 
 int TimeSpaceGraph::compute_virtual_node_id(int p, int t, int l) const{
-    if (p == 0)
-    {
-        return l - 1;
+    if(p == -1){ //Traitement du noeud source puit fictif 
+        return l-1;
     }
-    return (p - 1) * 3 + (t / t_s_) * num_pnodes_ * 3 + l + 2;
+    return p  * 3 + (t / t_s_) * num_pnodes_ * 3 + l + 2;
 }
 
 int TimeSpaceGraph::compute_virtual_node_id(int p, int t, int l, int time_step, int num_pnodes) {
-    if (p == 0) {
-        return l - 1;
+    if(p == -1){ //Traitement du noeud source puit fictif 
+        return l-1;
     }
-    return (p - 1) * 3 + (t / time_step) * num_pnodes * 3 + l + 2;
+    return p * 3 + (t / time_step) * num_pnodes * 3 + l + 2;
 }
 
 

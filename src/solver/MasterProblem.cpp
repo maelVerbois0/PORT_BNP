@@ -32,19 +32,19 @@ void MasterProblem::build_initial_model(const std::vector<Train>& trains, const 
 
     //Contraintes de flots
     for(auto& train : trains){
-        int k = train.get_ID() - 1;
-        flow_constrs_[k] = model_->addConstr(0.0 , GRB_GREATER_EQUAL, 1.0, "Flow train " + to_string(k + 1));
+        k = train.get_ID();
+        flow_constrs_[k] = model_->addConstr(0.0 , GRB_GREATER_EQUAL, 1.0, "Flow train " + to_string(k));
     }
 
     //Construction des contraintes de services (une par train et une par service)
     for(auto& train: trains){    
-        k = train.get_ID() - 1;
+        k = train.get_ID();
         service_required_[k] = train.get_services();
         for (int s = 0; s < num_services_ ; s++)
         {
             if (service_required_[k][s])
             {
-                service_constrs_[k][s] = model_->addConstr(0.0, GRB_GREATER_EQUAL, 1.0, "Train " + to_string(k + 1) + " service " + to_string(s));
+                service_constrs_[k][s] = model_->addConstr(0.0, GRB_GREATER_EQUAL, 1.0, "Train " + to_string(k) + " service " + to_string(s));
             }
         }
 
@@ -57,7 +57,7 @@ void MasterProblem::build_initial_model(const std::vector<Train>& trains, const 
     {
         for (int t = 0; time_step_*t <= max_time_; t += 1)
         { 
-            conflict_constrs_[p][t] = model_->addConstr(0.0, GRB_LESS_EQUAL, 1.0, "Incompatibility " + to_string(p + 1) + " at " + to_string(t));
+            conflict_constrs_[p][t] = model_->addConstr(0.0, GRB_LESS_EQUAL, 1.0, "Incompatibility " + to_string(p) + " at " + to_string(t));
         }
     }
 
@@ -132,12 +132,12 @@ void MasterProblem::add_column(const Column& col, const TimeSpaceGraph& graph) {
     GRBColumn grb_col;
     
     //Ajout dans la contrainte de flot
-    grb_col.addTerm(1.0, flow_constrs_[col.train_id - 1]);
+    grb_col.addTerm(1.0, flow_constrs_[col.train_id]);
 
     // Ajout dans les contraintes de service
-    for (int s_id = 1; s_id <= num_services_; ++s_id) {
-        if (col.services[s_id - 1] && service_required_[col.train_id - 1][s_id - 1]) {
-            grb_col.addTerm(1.0, service_constrs_[col.train_id - 1][s_id - 1]);
+    for (int s_id = 0; s_id < num_services_; ++s_id) {
+        if (col.services[s_id] && service_required_[col.train_id][s_id]) {
+            grb_col.addTerm(1.0, service_constrs_[col.train_id][s_id]);
         }
     }
 
@@ -147,7 +147,7 @@ void MasterProblem::add_column(const Column& col, const TimeSpaceGraph& graph) {
         for (const auto& node_time : arc.get_iNodes()) {
             int p = node_time.first;
             int t = node_time.second;
-            grb_col.addTerm(1.0, conflict_constrs_[p - 1][t / time_step_]);
+            grb_col.addTerm(1.0, conflict_constrs_[p][t / time_step_]);
         }
     }
 
@@ -221,4 +221,8 @@ bool MasterProblem::is_sol_fractional() const {
         throw std::runtime_error("Trying to determine the nature of the solution of an unsolved model !");
     }
     return !is_sol_integer();
+}
+
+int MasterProblem::get_gurobi_status() const {
+    return model_->get(GRB_IntAttr_Status);
 }

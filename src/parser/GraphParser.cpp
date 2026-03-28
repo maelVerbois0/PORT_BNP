@@ -61,9 +61,9 @@ void InstanceParser::parse_services(){
         if (i != id) {
              throw std::runtime_error("Invalid input file, service id invalid: " + filepath + 
                                     "\nService ID: " + std::to_string(i) + 
-                                    ", Wrong given ID: " + std::to_string(id) + "\n");
+                                    ", Wrong given ID: " + std::to_string(id) + "The two should match check the instance files\n");
         }
-        parsed_data_.services.push_back(Service(id, data[i][1], stoi(data[i][2]), stoi(data[i][3])));
+        parsed_data_.services.push_back(Service(id - 1, data[i][1], stoi(data[i][2]), stoi(data[i][3])));
     }
     n_services_ = n - 1;
     return;
@@ -87,9 +87,9 @@ void InstanceParser::parse_node_types(){
         if (i != id) {
             throw std::runtime_error("Invalid input file, node type id invalid: " + filepath + 
                                     "\nNode type ID: " + std::to_string(i) + 
-                                    ", Wrong given ID: " + std::to_string(id) + "\n");
+                                    ", Wrong given ID: " + std::to_string(id) + " The two should match check instance files\n");
         }
-        parsed_data_.node_types.push_back(NodeType(id, data[i][1], data[i][2] == "1", data[i][3] == "1", data[i][4] == "1", {}));
+        parsed_data_.node_types.push_back(NodeType(id - 1, data[i][1], data[i][2] == "1", data[i][3] == "1", data[i][4] == "1", {}));
         for (int j = 0; j < n_services_; j++)
         {
             parsed_data_.node_types[i - 1].addService(stoi(data[i][5 + j]) == 1); // For some reason doesn't work for the last column when using =="1" so transforming to int first
@@ -121,7 +121,7 @@ void InstanceParser::parse_nodes(){
         if (i != id) {
             throw std::runtime_error("Invalid input file, node id invalid: " + filepath + 
                                     "\nNode ID: " + std::to_string(i) + 
-                                    ", Wrong given ID: " + std::to_string(id) + "\n");
+                                    ", Wrong given ID: " + std::to_string(id) + " The two should match check instance file\n");
         }
         type = stoi(data[i][2]);
         if (type <= 0 || type > n_node_types_) {
@@ -129,8 +129,8 @@ void InstanceParser::parse_nodes(){
                                     "\nNode ID: " + std::to_string(id) + 
                                     ", Node type: " + std::to_string(type) + "\n");
         }
-        parsed_data_.pnodes.push_back(PNode(id, data[i][1], type));
-        parsed_data_.node_types[type - 1].addNode(id);
+        parsed_data_.pnodes.push_back(PNode(id - 1, data[i][1], type - 1));
+        parsed_data_.node_types[type - 1].addNode(id - 1);
     }
     n_nodes_ = n - 1;
     return; 
@@ -157,11 +157,11 @@ void InstanceParser::parse_links(){
         if (i != id) {
             throw std::runtime_error("Invalid input file, link id invalid: " + filepath + 
                                     "\nLink ID: " + std::to_string(i) + 
-                                    ", Wrong given ID: " + std::to_string(id) + "\n");
+                                    ", Wrong given ID: " + std::to_string(id) + " The two should match check instance files\n");
         }
         o = stoi(data[i][1]);
         d = stoi(data[i][2]);
-        parsed_data_.plinks.push_back(PLink(id, o, d, stoi(data[i][3])));
+        parsed_data_.plinks.push_back(PLink(id - 1, o - 1, d - 1, stoi(data[i][3])));
 
         if (o < 1 || o > n_nodes_ || d < 1 || d > n_nodes_) {
             throw std::runtime_error("Invalid input file, origin or destination nodes invalid: " + filepath + 
@@ -194,9 +194,9 @@ void InstanceParser::parse_train_types(){
         if (i != id) {
             throw std::runtime_error("Invalid input file, train type id invalid: " + filepath + 
                                     "\nTrain type ID: " + std::to_string(i) + 
-                                    ", Wrong given ID: " + std::to_string(id) + "\n");
+                                    ", Wrong given ID: " + std::to_string(id) + " The two should match check instance files\n");
         }
-        parsed_data_.train_types.push_back(TrainType(id, data[i][1], stoi(data[i][2]), stoi(data[i][3])));
+        parsed_data_.train_types.push_back(TrainType(id - 1, data[i][1], stoi(data[i][2]), stoi(data[i][3])));
     }
     n_train_types_ = n - 1;
     return; 
@@ -246,7 +246,7 @@ void InstanceParser::parse_trains(){
                                     ", Arrival time: " + std::to_string(a) + 
                                     ", Departure time: " + std::to_string(d) + "\n");
         }
-        parsed_data_.trains.push_back(Train(id, data[i][1], type, stoi(data[i][3]), stoi(data[i][4]), n_services_));
+        parsed_data_.trains.push_back(Train(id - 1, data[i][1], type - 1, stoi(data[i][3]), stoi(data[i][4]), n_services_));
     }
     n_trains_ = n - 1;
     return;
@@ -279,7 +279,7 @@ void InstanceParser::parse_operations(){
                                     "\nNumber of trains: " + std::to_string(n_trains_) + 
                                     ", Number of services: " + std::to_string(n_services_) + "\n");
         }
-        if (parsed_data_.trains[train - 1].get_service(type)) {
+        if (parsed_data_.trains[train - 1].get_service(type - 1)) {
             throw std::runtime_error("Invalid input file, service assigned twice or more to the same train: " + filepath + 
                                     "\nOperation ID: " + data[i][0] + 
                                     "\nTrain ID: " + std::to_string(train) + 
@@ -287,7 +287,7 @@ void InstanceParser::parse_operations(){
                                     "\nNumber of trains: " + std::to_string(n_trains_) + 
                                     ", Number of services: " + std::to_string(n_services_) + "\n");
         }
-        parsed_data_.trains[train - 1].set_service(type);
+        parsed_data_.trains[train - 1].set_service(type - 1);
         parsed_data_.assignement[type - 1]++;
     }
     return;

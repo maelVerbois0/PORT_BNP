@@ -1,6 +1,7 @@
 #include <iostream>
 #include <string>
 #include <vector>
+#include <queue>
 
 #include "GraphParser.h"
 #include "GraphBuilder.h"
@@ -12,9 +13,9 @@
 
 
 int main(int argc, char** argv){
-    std::string directory_path = (argc > 1) ? argv[1] : "../instances/small station/scenario 1/";
+    std::string directory_path = (argc > 1) ? argv[1] : "../instances/small station/scenario 2/";
 
-        std::cerr << "===========================================" << std::endl;
+    std::cerr << "===========================================" << std::endl;
     std::cerr << "   TEST B&P    " << std::endl;
     std::cerr << "===========================================" << std::endl;
     std::cerr << "Dossier cible : " << directory_path << "\n" << std::endl;
@@ -45,7 +46,12 @@ int main(int argc, char** argv){
     std::cerr << "\n EXCEPTION DETECTEE :" << std::endl;
     std::cerr << "Erreur : " << e.what() << std::endl;
     return 1;
-    }
+    }catch (const GRBException& e) {
+    // Specifically handles Gurobi-related issues
+    std::cerr << "Gurobi Error code: " << e.getErrorCode() << std::endl;
+    std::cerr << e.getMessage() << std::endl;
+
+    }   
 
     return 0;
 }

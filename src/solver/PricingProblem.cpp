@@ -34,7 +34,7 @@ double PricingProblem::get_arc_reduced_cost(int train_id, const Arc& arc, const 
     for (const auto& node_time : arc.get_iNodes()) {
         int p = node_time.first;
         int t = node_time.second;
-        r_cost -= conflict_duals[p - 1][t / t_s];
+        r_cost -= conflict_duals.at(p).at(t / t_s);
     }
     return r_cost;
 }
@@ -46,7 +46,7 @@ std::vector<Column> PricingProblem::solve(const std::vector<double>& flow_duals,
     for (const Train& train : trains_) {
         int k = train.get_ID();
         // On lance le pricing pour le train k
-        auto opt_col = find_shortest_path_for_train(k, flow_duals[k - 1], service_duals[k - 1], conflict_duals, state_manager);
+        auto opt_col = find_shortest_path_for_train(k, flow_duals[k], service_duals[k], conflict_duals, state_manager);
         
         // Si une colonne (chemin de coût réduit < 0) a été trouvée, on l'ajoute
         if (opt_col.has_value()) {
@@ -58,15 +58,15 @@ std::vector<Column> PricingProblem::solve(const std::vector<double>& flow_duals,
 
 std::optional<Column> PricingProblem::find_shortest_path_for_train(int train_id, double pi_k, const std::vector<double>& service_duals_k, const std::vector<std::vector<double>>& conflict_duals, const GlobalStateManager& state_manager) const{
     
-    const Train& train = trains_[train_id - 1];
+    const Train& train = trains_[train_id];
     int ns = service_duals_k.size();
     
     // 1. Préparation des masques binaires pour les services requis
     std::vector<int> service_bit(ns, -1);
     int bit_idx = 0;
-    for (int s = 1; s <= ns; s++) {
+    for (int s = 0; s < ns; s++) {
         if (train.get_service(s)) {
-            service_bit[s - 1] = bit_idx++; // Associe le service à un bit spécifique
+            service_bit[s] = bit_idx++; // Associe le service à un bit spécifique
         }
     }
     
@@ -99,7 +99,7 @@ std::optional<Column> PricingProblem::find_shortest_path_for_train(int train_id,
                 const Arc& arc = graph_.get_arc(a_id);
                 
 
-                if (!graph_.arc_accessible_by_train(train_id - 1, a_id)) continue; 
+                if (!graph_.arc_accessible_by_train(train_id, a_id)) continue; 
 
                 // Coût de base + Pénalité de conflit
                 double arc_r_cost = get_arc_reduced_cost(train_id, arc, conflict_duals);
@@ -108,12 +108,12 @@ std::optional<Column> PricingProblem::find_shortest_path_for_train(int train_id,
                 // Traitement spécifique si c'est un arc de Service
                 if (arc.get_type() == SERVICE) {
                     int s_id = arc.get_service();
-                    int bit = service_bit[s_id - 1];
+                    int bit = service_bit[s_id];
                     
                     if (bit >= 0) {
                         // Si le service est requis ET n'a pas encore été accompli
                         if ((mask & (1 << bit)) == 0) {
-                            arc_r_cost -= service_duals_k[s_id - 1]; // On soustrait Alpha (la récompense duale)
+                            arc_r_cost -= service_duals_k[s_id]; // On soustrait Alpha (la récompense duale)
                             new_mask = mask | (1 << bit);            // On met à jour le masque
                         } else {
                             // Si le service est déjà accompli, on s'interdit de le refaire (ou on ne donne pas la prime)
@@ -144,7 +144,7 @@ std::optional<Column> PricingProblem::find_shortest_path_for_train(int train_id,
     int num_pnodes = graph_.get_nb_pnodes(); // <-- Assure-toi d'avoir cette méthode dans TimeSpaceGraph !
     
     for (int t = 0; t <= T; t += t_s) {
-        for (int p = 1; p <= num_pnodes; p++) {
+        for (int p = 0; p < num_pnodes; p++) {
             for (int l = 0; l < 3; l++) {
                 int n_id = graph_.compute_virtual_node_id(p, t, l);
                 relax_from_node(n_id);
@@ -191,7 +191,7 @@ std::optional<Column> PricingProblem::find_shortest_path_for_train(int train_id,
         new_col.cost += arc.get_cost(train_id);
         
         if (arc.get_type() == SERVICE) {
-            new_col.services[arc.get_service() - 1] = true;
+            new_col.services[arc.get_service()] = true;
         }
         
         cur = prev_state_[cur];
