@@ -133,7 +133,7 @@ void SearchTree::add_node_to_queues(BPNode* raw_node) {
 
 
 void SearchTree::prune(BPNode* node) {
-    if (node == nullptr || node->status == NodeStatus::PRUNED) return;
+    if (node == nullptr) return;
 
     node->status = NodeStatus::PRUNED;
 

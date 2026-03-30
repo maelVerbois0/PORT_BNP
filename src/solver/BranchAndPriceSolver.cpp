@@ -9,14 +9,15 @@
 #include <numeric>
 #include <stdexcept>
 #include <stack>
+#include <chrono>
+#include <fstream>
+#include <iomanip>
 
 BranchingDecision BranchAndPriceSolver::choose_branching_variable() const {
     try {
         return service_split_branching();
         
     } catch (const std::runtime_error& e) {
-        std::cerr << "[Branching] Service split a echoue (" << e.what() 
-                  << ") -> Fallback sur Quantum Train Branching." << std::endl;
         return quantum_train_branching();
     }
 }
@@ -339,44 +340,70 @@ bool BranchAndPriceSolver::is_current_solution_integer() const{
 
 
 //The column generation algorithm suppose the state has been altered to reflect the node trying to be processed
- void BranchAndPriceSolver::run_column_generation(BPNode* node, double termination_gap = 0.0){
+ void BranchAndPriceSolver::run_column_generation(BPNode* node, double termination_gap) {
     if(node->status != NodeStatus::UNPROCESSED){
         throw std::runtime_error("Trying to run column generation on an already processed or processing node !");
     }
     node->status = NodeStatus::PROCESSING;
+    
     while(true){
+        
+        // =========================================================
+        // ⏱️ CHRONO : DEBUT MASTER PROBLEM
+        // =========================================================
+        auto start_master = std::chrono::high_resolution_clock::now();
+        
         master_.solve();
         if(!master_.is_infeasible() && !master_.is_optimal()){
             throw std::runtime_error("Error while trying to solve the master problem at a given node");
         }
 
         if(master_.is_infeasible()){
-            std::cerr << "Master problem is genuinely INFEASIBLE at this node." << std::endl;
             node->status = NodeStatus::INFEASIBLE;
             node->lower_bound = -INF;
+            
+            auto end_master_inf = std::chrono::high_resolution_clock::now();
+            time_master_ += std::chrono::duration<double>(end_master_inf - start_master).count();
             break;
         }
 
-        
         const std::vector<double> flow_duals = master_.get_flow_duals();
         const std::vector<std::vector<double>> service_duals = master_.get_service_duals();
         const std::vector<std::vector<double>> conflict_duals = master_.get_conflict_duals();
+        
+        auto end_master = std::chrono::high_resolution_clock::now();
+        time_master_ += std::chrono::duration<double>(end_master - start_master).count();
+        // =========================================================
+        // ⏱️ CHRONO : FIN MASTER PROBLEM
+        // =========================================================
+
+
+        // =========================================================
+        // ⏱️ CHRONO : DEBUT PRICING PROBLEM
+        // =========================================================
+        auto start_pricing = std::chrono::high_resolution_clock::now();
+        
         auto [add_cols, best_reduced_costs] = pricing_.solve(flow_duals, service_duals, conflict_duals, state_manager_);
+        
+        auto end_pricing = std::chrono::high_resolution_clock::now();
+        time_pricing_ += std::chrono::duration<double>(end_pricing - start_pricing).count();
+        // =========================================================
+        // ⏱️ CHRONO : FIN PRICING PROBLEM
+        // =========================================================
+
+
         double lagrangian_lower_bound = master_.get_objective_value() + std::accumulate(best_reduced_costs.begin(), best_reduced_costs.end(), 0.0);
         double lagrangian_gap = std::abs((master_.get_objective_value() - lagrangian_lower_bound)/ lagrangian_lower_bound);
+        
         if(lagrangian_lower_bound > tree_.get_best_upper_bound() + 1e-5){
-            std::cerr << "La borne lagrangienne est au dessus de la meilleure solution connue." << std::endl;
             node->status = NodeStatus::PRUNED;
             node->lower_bound = lagrangian_lower_bound;
             return;
         }
-
-        std::cerr << "Borne inférieure de la génération de colonne actuelle :" << lagrangian_lower_bound << endl;
-        std::cerr << "Gap par rapport à la valeur courante du rmp : " << lagrangian_gap * 100 << "%" << std::endl;
+        
         if(add_cols.empty() || lagrangian_gap <= termination_gap){  
-            std::cerr << "The solve ended with status: " << master_.get_gurobi_status() << std::endl;
             if (master_.is_sol_integer()){
-                node->status=NodeStatus::INTEGER;
+                node->status = NodeStatus::INTEGER;
                 node->lower_bound = lagrangian_lower_bound;
                 if(tree_.get_best_upper_bound() > master_.get_objective_value()){
                     const std::vector<int> active_id = master_.get_active_columns_ids();
@@ -397,73 +424,179 @@ bool BranchAndPriceSolver::is_current_solution_integer() const{
         for(auto& col : add_cols){
             add_Column(col);
         }
-
     }
 }
 
 
-void BranchAndPriceSolver::solve(){
-    BPNode* current_node = tree_.get_next_node();
+SolveStatistics BranchAndPriceSolver::solve(double time_limit_s, const std::string& instance_name) {
+    
+    print_log_header();
+    auto start_time = std::chrono::high_resolution_clock::now();
+    std::vector<double> gap_limits = {0.0, 0.001, 0.005, 0.01};
+    
+    SolveStatistics stats;
+    stats.instance_name = instance_name;
+    stats.num_trains = trains_.size(); 
+    stats.num_arcs = graph_.get_arcs().size();
+    stats.time_to_first_sol_s = -1.0;
+    stats.root_lb = -INF;
+    stats.pruned_nodes = 0;
+    
+    // Fichier dynamique pour les graphiques
+    std::string dyn_file = "../results/dynamics/dynamics_" + instance_name + ".csv";
+    std::ofstream log_file(dyn_file);
+    log_file << "Time_s,Nodes,Columns,LB,UB,Gap\n";
+
     int iter = 0;
-    std::vector<double> termination_gaps_column_generation = {0.0, 0.00, 0.00, 0.0};
-    double time_limit_static_heuristic = 20.0;
-    while(current_node != nullptr){
-        if(current_node->lower_bound + 1e-6 >= tree_.get_best_upper_bound()){
+    BPNode* current_node = tree_.get_next_node();
+    switch_state(current_node);
+
+    while (current_node != nullptr) {
+
+        if (iter > 0 && iter % 20 == 0) {
+            print_log_header();
+        }
+
+        auto now = std::chrono::high_resolution_clock::now();
+        double elapsed_s = std::chrono::duration<double>(now - start_time).count();
+        
+        // --- TIME LIMIT CHECK ---
+        if (elapsed_s >= time_limit_s) {
+            std::cout << "\nTIME LIMIT ATTEINTE (" << time_limit_s << "s). Arrêt du solveur.\n";
+            break;
+        }
+
+        // Récupération des bornes actuelles
+        double current_lb = tree_.get_best_lower_bound();
+        double current_ub = tree_.get_best_upper_bound();
+
+        if(current_ub <= current_node->lower_bound + 1e-6){
             tree_.prune(current_node);
-            current_node = tree_.get_next_node();
+            stats.pruned_nodes++;
+            current_node= tree_.get_next_node();
+            iter++;
             continue;
         }
-
         
-        //Remarque il est essentiel de lancer les heuristiques avant la génération de colonnes et le branchement car ces heuristiques modifient l'état du master_problem (activation désactivation de colonnes valeurs duales différentes pour les contraintes etc)
-        //Cela rend donc caduque l'accès aux attributs du solveur qui ne peuvent être récupérés que après un solve 
-        if(iter % 5 == 0 && iter >= 10){
-            run_global_mip_heuristic(time_limit_static_heuristic);
+        std::string current_action = "CG";
+
+        // Écriture dans le CSV dynamique (Primal-Dual)
+        double current_gap = (current_ub < 1e9 && current_lb > -1e9) ? ((current_ub - current_lb) / current_lb * 100.0) : NAN;
+        log_file << elapsed_s << "," << iter << "," << column_pool_.size() << "," 
+                 << (current_lb > -INF ? std::to_string(current_lb) : "") << "," << (current_ub < INF ? std::to_string(current_ub) : "") << "," 
+                 << std::max(0.0, current_gap) << "\n";
+
+        // --- LOGIQUE DU SOLVEUR & PROFILING ---
+        
+        // Heuristiques
+        if (iter > 0 && iter % 5 == 0) {
+            current_action = "Heur.";
+            print_log_line(iter, current_node->depth, elapsed_s, current_lb, current_ub, current_action);
+            auto h_start = std::chrono::high_resolution_clock::now();
+            run_diving_heuristic(*current_node); 
+            run_global_mip_heuristic(15.0); 
+                 
+            time_heuristics_ += std::chrono::duration<double>(std::chrono::high_resolution_clock::now() - h_start).count();
         }
-        if((iter - 1) % 5 == 0 && iter >=1){
-            run_diving_heuristic(*current_node);
+        current_ub = tree_.get_best_upper_bound();
+        // --- TIME TO FIRST SOLUTION (TTFS) ---
+        if (current_ub < INF && stats.time_to_first_sol_s < 0) {
+            stats.time_to_first_sol_s = elapsed_s;
         }
 
-
-        std::cerr << "Nombre d'itérations : " << iter << std::endl;
-        std::cerr << "Current depth : " << current_node->depth << std::endl;
-        std::cerr << "Best known lower bound : " << tree_.get_best_lower_bound() << std::endl;
-        std::cerr << "Best known upper bound : " << tree_.get_best_upper_bound()<< std::endl;
-        std::cerr << "Gap : " << (tree_.get_best_upper_bound() - tree_.get_best_lower_bound())/tree_.get_best_lower_bound() * 100<<"%"<<std::endl;
-
-        switch_state(current_node);
-        std::cerr << "Running Column Generation..." << std::endl;
         if(current_node->depth == 0){
-            run_column_generation(current_node, termination_gaps_column_generation[0]);
+            run_column_generation(current_node, gap_limits[0]); 
         }
         else if(current_node->depth <= 5){
-            run_column_generation(current_node, termination_gaps_column_generation[1]);
+            run_column_generation(current_node, gap_limits[1]);
         }
         else if(current_node->depth <= 10){
-            run_column_generation(current_node, termination_gaps_column_generation[2]);
+            run_column_generation(current_node, gap_limits[2]);
         }
         else{
-            run_column_generation(current_node,termination_gaps_column_generation[3]);
+            run_column_generation(current_node, gap_limits[3]);
         }
+
+        // Capture de la borne racine
+        if (current_node->depth == 0 && current_node->status != NodeStatus::INFEASIBLE) {
+            stats.root_lb = current_node->lower_bound;
+        }
+
         
-        
-        if(current_node->status == NodeStatus::FRACTIONAL){
-            std::cerr << "Found a fractionnal solution branching" << std::endl;
+        if(current_node->status == NodeStatus::PRUNED){
+            current_action = "Pruning";
+            stats.pruned_nodes++;
+            BPNode* ant_node = current_node;
+            current_node = tree_.get_next_node();
+            switch_state(current_node);
+            tree_.prune(ant_node);
+        }
+        // Branchement
+        if (current_node->status == NodeStatus::FRACTIONAL) {
+            current_action = "Branching";
             BranchingDecision decision = choose_branching_variable();
             branch_on_node(current_node, decision);
         }
-        else if (current_node -> status == NodeStatus::PRUNED){
-            std::cerr << "Pruning a node..." << std::endl;
-        }
-        else if (current_node -> status == NodeStatus::INTEGER){
-            std::cerr << "Found an integer solution !!!" << std::endl;
-            std::cerr << "It's value : "<<current_node->lower_bound << std::endl;
-            std::cerr << "We'll stop the dive and start trying to improve the bound" << std::endl;
-            tree_.set_strategy_BBF();
-        }
+        
+        print_log_line(iter, current_node->depth, elapsed_s, current_lb, current_ub, current_action);
+        
         current_node = tree_.get_next_node();
+        switch_state(current_node);
         iter++;
     }
+
+    log_file.close();
+
+    // --- STATISTIQUES FINALES ---
+    auto end_time = std::chrono::high_resolution_clock::now();
+    stats.total_time_s = std::chrono::duration<double>(end_time - start_time).count();
+    stats.final_lb = tree_.get_best_lower_bound();
+    stats.final_ub = tree_.get_best_upper_bound();
+    stats.gap_pct = (stats.final_ub < 1e9 && stats.final_lb > -1e9 && stats.final_lb != 0) 
+               ? ((stats.final_ub - stats.final_lb) / stats.final_lb * 100.0) : 0.0;
+    stats.explored_nodes = iter;
+    stats.time_in_master_s = time_master_;
+    stats.time_in_pricing_s = time_pricing_;
+    stats.time_in_heuristics_s = time_heuristics_;
+
+    std::cout << "\n=======================================================\n";
+    std::cout << " FIN DE LA RÉSOLUTION : " << stats.instance_name << "\n";
+    std::cout << "=======================================================\n";
+    
+    // Formatage pour avoir 2 chiffres après la virgule
+    std::cout << std::fixed << std::setprecision(2);
+    
+    std::cout << "   PROFILING DU TEMPS :\n";
+    std::cout << "   ├─ Temps Total    : " << stats.total_time_s << " s\n";
+    if (stats.time_to_first_sol_s > 0) {
+        std::cout << "   ├─ 1ère solution  : " << stats.time_to_first_sol_s << " s\n";
+    }
+    
+    // Calcul des pourcentages de temps (avec sécurité pour éviter la division par zéro)
+    double safe_total = std::max(stats.total_time_s, 0.001);
+    std::cout << "   ├─ Master : " << stats.time_in_master_s << " s (" 
+              << (stats.time_in_master_s / safe_total * 100.0) << "%)\n";
+    std::cout << "   ├─ Pricing        : " << stats.time_in_pricing_s << " s (" 
+              << (stats.time_in_pricing_s / safe_total * 100.0) << "%)\n";
+    std::cout << "   └─ Heuristiques   : " << stats.time_in_heuristics_s << " s (" 
+              << (stats.time_in_heuristics_s / safe_total * 100.0) << "%)\n";
+    
+    std::cout << "\n  RÉSULTATS:\n";
+    std::cout << "   ├─ Noeuds explorés: " << stats.explored_nodes << "\n";
+    std::cout << "   ├─ LB Racine      : " << stats.root_lb << "\n";
+    std::cout << "   ├─ LB Finale      : " << stats.final_lb << "\n";
+    
+    // Affichage propre de l'UB (gère le cas où aucune solution entière n'est trouvée)
+    if (stats.final_ub < 1e9) {
+        std::cout << "   ├─ UB Finale      : " << stats.final_ub << "\n";
+        std::cout << "   └─ Gap Prouvé     : " << std::max(0.0, stats.gap_pct) << " %\n";
+    } else {
+        std::cout << "   ├─ UB Finale      : INF (Aucune solution entière trouvée)\n";
+        std::cout << "   └─ Gap Prouvé     : INF\n";
+    }
+    std::cout << "=======================================================\n\n";
+
+    return stats;
 }
 
 double BranchAndPriceSolver::get_optimal_value() const {
@@ -476,7 +609,6 @@ std::vector<Column> BranchAndPriceSolver::get_optimal_solution() const{
 
 
 void BranchAndPriceSolver::run_global_mip_heuristic(double time_limit_seconds) {
-    std::cerr << "\n--- [HEURISTIQUE GLOBALE] Lancement sur TOUT le pool de colonnes ---" << std::endl;
 
     // On récupère toutes les colonnes qui sont actuellement interdites par le noeud courant
     std::vector<int> cols_to_restore{};
@@ -496,17 +628,13 @@ void BranchAndPriceSolver::run_global_mip_heuristic(double time_limit_seconds) {
     
     if (!master_.is_infeasible() &&  master_.get_current_nb_solutions() > 0) {
         double heuristic_val = master_.get_objective_value();
-        std::cerr << "[HEURISTIQUE GLOBALE] Solution entiere trouvee ! Cout : " << heuristic_val << std::endl;
         
         if (heuristic_val < tree_.get_best_upper_bound()) {
-            std::cerr << "[HEURISTIQUE GLOBALE] NOUVEL INCUMBENT !" << std::endl;
-            // On extrait les variables à 1
+            std::cout << " * \033[32mNOUVELLE SOLUTION ENTIÈRE TROUVÉE : " << heuristic_val << "\033[0m\n";
             std::vector<int> current_sol_column_id = master_.get_active_columns_ids();
             std::vector<Column> best_sol= column_pool_.get_columns(current_sol_column_id);
             tree_.set_incumbent_solution(heuristic_val, best_sol);
         }
-    } else {
-        std::cerr << "[HEURISTIQUE GLOBALE] Aucune solution trouvee dans le temps imparti." << std::endl;
     }
     
     master_.set_time_limit(GRB_INFINITY);
@@ -514,7 +642,6 @@ void BranchAndPriceSolver::run_global_mip_heuristic(double time_limit_seconds) {
     master_.convert_to_continuous();
     master_.disable_columns(cols_to_restore);
     
-    std::cerr << "--- [HEURISTIQUE GLOBALE] Fin. Etat du noeud courant restaure ---\n" << std::endl;
 }
 
 
@@ -524,7 +651,6 @@ struct DiveStep {
 };
 
 void BranchAndPriceSolver::run_diving_heuristic(BPNode base_node) {
-    std::cerr << "\n[DIVING] Debut de la plongee heuristique..." << std::endl;
     
     //1. INTIALISATION
     std::stack<DiveStep> dive_history;
@@ -532,28 +658,23 @@ void BranchAndPriceSolver::run_diving_heuristic(BPNode base_node) {
 
     while (true) {
         depth_dive++;
-        std::cerr << "  -> Niveau de plongee : " << depth_dive << std::endl;
 
         // 2. GÉNÉRATION DE COLONNES (Mode Rapide) 
         run_column_generation(&base_node, 0.05); 
         //On est obligé de redeclarer le noeud comme non traité. C'est un peu moche il vaudrait mieux faire une fonction de génération de colonnes dédiée mais flemme pour l'instant
         base_node.status = NodeStatus::UNPROCESSED;
         if (base_node.lower_bound > tree_.get_best_upper_bound()){
-            std::cerr << "Solution courante plus chère que la meilleur incumbent on arrête l'heuristique" << std::endl;
             break;
         }
         // 3. VÉRIFICATIONS DE FIN DE PLONGÉE
         if (master_.is_infeasible()) {
-            std::cerr << "[DIVING] Echec : Infaisabilite atteinte. Fin de la plongee." << std::endl;
             break;
         }
         
         if (master_.is_sol_integer()) {
-            double val = master_.get_objective_value();
-            std::cerr << "[DIVING] SUCCES ! Solution entiere trouvee : " << val << std::endl;
-            
+            double val = master_.get_objective_value();     
             if (val < tree_.get_best_upper_bound()) {
-                std::cerr << "[DIVING] Nouvel Incumbent valide !" << std::endl;
+                std::cout << " * \033[32mNOUVELLE SOLUTION ENTIÈRE TROUVÉE : " << val << "\033[0m\n";
                 std::vector<int> incumbent_cols_ids = master_.get_active_columns_ids();
                 std::vector<Column> incumbent = column_pool_.get_columns(incumbent_cols_ids);
                 tree_.set_incumbent_solution(val, incumbent);
@@ -608,12 +729,10 @@ void BranchAndPriceSolver::run_diving_heuristic(BPNode base_node) {
         // SAUVEGARDE DANS LA PILE
         dive_history.push({step_train_ids, step_delta_map});
         
-        std::cerr << "  -> Train " << target_train << " fixe sur la colonne " << best_col_id << std::endl;
 
     } 
     
     // 6. Dépilage des modifications
-    std::cerr << "[DIVING] Nettoyage : Restauration de l'etat pas-a-pas..." << std::endl;
     
     while (!dive_history.empty()) {
         DiveStep last_step = dive_history.top();
@@ -622,5 +741,89 @@ void BranchAndPriceSolver::run_diving_heuristic(BPNode base_node) {
         master_.enable_columns(enabled_cols);
         
     }
-    std::cerr << "[DIVING] Plongee terminee, compteurs restaurés a l'identique.\n" << std::endl;
+}
+
+void BranchAndPriceSolver::export_best_solution(const std::string& filename) const {
+    std::vector<Column> best_sol = tree_.get_incumbent_solution();
+    
+    std::ofstream out(filename);
+    if (!out.is_open()) {
+        std::cerr << "Erreur : Impossible de créer le fichier " << filename << std::endl;
+        return;
+    }
+
+    // Si aucune solution n'a été trouvée
+    if (best_sol.empty() || tree_.get_best_upper_bound() >= 1e9) {
+        out << "{\n  \"status\": \"No integer solution found\"\n}\n";
+        out.close();
+        return;
+    }
+
+    // --- ÉCRITURE DU JSON À LA MAIN ---
+    out << "{\n";
+    out << "  \"objective_value\": " << tree_.get_best_upper_bound() << ",\n";
+    out << "  \"num_trains_routed\": " << best_sol.size() << ",\n";
+    out << "  \"train_paths\": [\n";
+
+    for (size_t i = 0; i < best_sol.size(); ++i) {
+        const Column& col = best_sol[i];
+        
+        out << "    {\n";
+        out << "      \"train_id\": " << col.train_id << ",\n";
+        out << "      \"cost\": " << col.cost << ",\n";
+        
+
+        out << "      \"arc_sequence\": [";
+        for (size_t j = 0; j < col.arc_ids.size(); ++j) {
+            out << col.arc_ids[j];
+            if (j < col.arc_ids.size() - 1) out << ", ";
+        }
+        out << "]\n";
+        
+
+        out << "    }";
+        if (i < best_sol.size() - 1) out << ",";
+        out << "\n";
+    }
+
+    out << "  ]\n";
+    out << "}\n";
+
+    out.close();
+    std::cout << "Meilleure solution sauvegardée dans : " << filename << std::endl;
+}
+
+void BranchAndPriceSolver::print_log_header() const {
+    std::cout << "\n" << std::string(90, '=') << "\n";
+    std::cout << std::left 
+              << std::setw(8)  << "Node" 
+              << std::setw(8)  << "Depth" 
+              << std::setw(10) << "Cols" 
+              << std::setw(12) << "Time (s)" 
+              << std::setw(15) << "Best Bound" 
+              << std::setw(15) << "Incumbent" 
+              << std::setw(10) << "Gap (%)" 
+              << std::setw(12) << "Action" 
+              << "\n";
+    std::cout << std::string(90, '-') << "\n";
+}
+
+void BranchAndPriceSolver::print_log_line(int iter, int depth, double elapsed_s, double lb, double ub, const std::string& action) const {
+    // Calcul du gap sécurisé
+    double gap = (ub < 1e9 && lb > -1e9 && lb != 0) ? ((ub - lb) / lb * 100.0) : 0.0;
+    if (gap < 0) gap = 0.0;
+
+    // Formatage de l'UB (pour ne pas afficher 1e+09)
+    std::string ub_str = (ub < 1e9) ? std::to_string(ub) : "---";
+
+    std::cout << std::left 
+              << std::setw(8)  << iter 
+              << std::setw(8)  << depth 
+              << std::setw(10) << column_pool_.size() 
+              << std::fixed << std::setprecision(1) << std::setw(12) << elapsed_s 
+              << std::setprecision(2) << std::setw(15) << (lb > -INF ? std::to_string(lb).substr(0, 8) : "---")
+              << std::setw(15) << (ub < INF ? std::to_string(ub).substr(0, 8) : "---") 
+              << std::setprecision(2) << std::setw(10) << (ub < 1e9 ? std::to_string(gap).substr(0, 5) + "%" : "---")
+              << std::setw(12) << action 
+              << "\n";
 }
