@@ -13,7 +13,7 @@
 
 
 int main(int argc, char** argv){
-    std::string directory_path = (argc > 1) ? argv[1] : "../instances/small station/scenario 2/";
+    std::string directory_path = (argc > 1) ? argv[1] : "../instances/large station/scenario 1/";
 
     std::cerr << "===========================================" << std::endl;
     std::cerr << "   TEST B&P    " << std::endl;

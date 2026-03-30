@@ -40,7 +40,7 @@ public:
     double get_optimal_value() const;
     std::vector<Column> get_optimal_solution() const;
 private:
-    void run_column_generation(BPNode* node);
+    void run_column_generation(BPNode* node, double termination_gap);
     bool is_current_solution_integer() const;
     BranchingDecision choose_branching_variable() const;
     BranchingDecision physical_node_branching() const;
@@ -50,6 +50,8 @@ private:
     int add_Column(Column& col);
     void switch_state(BPNode* target);
 
+    void run_global_mip_heuristic(double time_limit_seconds);
+    void run_diving_heuristic(BPNode base_node);
     const TimeSpaceGraph& graph_;
     const std::vector<Train>& trains_;
 

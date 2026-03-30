@@ -56,4 +56,7 @@ int TimeSpaceGraph::compute_virtual_node_id(int p, int t, int l, int time_step, 
     return p * 3 + (t / time_step) * num_pnodes * 3 + l + 2;
 }
 
+const std::vector<int>& TimeSpaceGraph::get_arcs_providing_service(int service_id) const{
+    return arc_providing_services_[service_id];
+}
 

@@ -8,10 +8,11 @@ GlobalStateManager::GlobalStateManager(int num_trains, int num_arcs):
 num_trains_(num_trains),
 num_arcs_(num_arcs),
 flat_arc_to_columns_(num_arcs * num_trains), 
-flat_is_forbidden_(num_trains * num_arcs, false) {}
+flat_is_forbidden_(num_trains * num_arcs, 0) 
+{}
 
 bool GlobalStateManager::is_arc_forbidden(int train_id, int arc_id) const{
-    return flat_is_forbidden_[train_id * num_arcs_ + arc_id];
+    return flat_is_forbidden_[train_id * num_arcs_ + arc_id] > 0;
 }
 
 //Precondition : the added column should be associated with a path without active restriction (ie we can initialize conflict_count to be 0)
@@ -51,7 +52,7 @@ ColumnList GlobalStateManager::revert_delta(const std::vector<int>& train_ids, c
 ColumnList GlobalStateManager::apply_delta_single_train(int train_id, const std::vector<int>& forbidden_arcs){
     ColumnList to_remove{};
     for(int arc_id: forbidden_arcs){
-        flat_is_forbidden_[num_arcs_ * train_id + arc_id] = true;
+        flat_is_forbidden_[num_arcs_ * train_id + arc_id]++;
         for(int column_id: flat_arc_to_columns_[num_arcs_ * train_id + arc_id]){
             if(conflict_count_[column_id] == 0){
                 to_remove.push_back(column_id);
@@ -65,7 +66,7 @@ ColumnList GlobalStateManager::apply_delta_single_train(int train_id, const std:
 ColumnList GlobalStateManager::revert_delta_single_train(int train_id, const std::vector<int>& forbidden_arcs){
     ColumnList to_add_back{};
     for(int arc_id: forbidden_arcs){
-        flat_is_forbidden_[num_arcs_ * train_id + arc_id] = false;
+        flat_is_forbidden_[num_arcs_ * train_id + arc_id]--;
         for(int column_id: flat_arc_to_columns_[num_arcs_* train_id + arc_id]){
             conflict_count_[column_id]--;
             if(conflict_count_[column_id] == 0){
@@ -76,5 +77,8 @@ ColumnList GlobalStateManager::revert_delta_single_train(int train_id, const std
     return to_add_back;
 }
 
+bool GlobalStateManager::is_column_disabled(int column_id) const{
+    return conflict_count_[column_id] > 0;
+}
 
 

@@ -59,6 +59,7 @@ public:
     std::vector<std::vector<double>> get_conflict_duals() const;           // Retourne Mu
     double get_column_value(int id) const;
     MasterStatus get_master_status() const;
+    int get_current_nb_solutions() const;
 
     bool is_sol_integer() const; 
     bool is_sol_fractional() const;
@@ -68,8 +69,10 @@ public:
     void enable_columns(const std::vector<int>& col_id);
     void disable_columns(const std::vector<int>& col_id);
 
-    // --- Phase Finale (Résolution Entière) ---
     void convert_to_integer();
     void convert_to_continuous();
-    std::vector<int> get_active_columns_ids() const;
+    std::vector<int> get_active_columns_ids() const; //Renvoie l'id des colonnes qui sont actives (ie de valeur non nulles)
+    void set_time_limit(double time_limit_second);
+    void set_focus_to_finding_sol();
+    void set_focus_to_auto();
 };

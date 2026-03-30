@@ -40,23 +40,24 @@ double PricingProblem::get_arc_reduced_cost(int train_id, const Arc& arc, const 
 }
 
 
-std::vector<Column> PricingProblem::solve(const std::vector<double>& flow_duals, const std::vector<std::vector<double>>& service_duals, const std::vector<std::vector<double>>& conflict_duals, const GlobalStateManager& state_manager) const {
+std::pair<std::vector<Column>, std::vector<double>> PricingProblem::solve(const std::vector<double>& flow_duals, const std::vector<std::vector<double>>& service_duals, const std::vector<std::vector<double>>& conflict_duals, const GlobalStateManager& state_manager) const {
     std::vector<Column> new_columns;
-    
+    std::vector<double> best_reduced_costs(trains_.size(), 0.0);
     for (const Train& train : trains_) {
         int k = train.get_ID();
         // On lance le pricing pour le train k
-        auto opt_col = find_shortest_path_for_train(k, flow_duals[k], service_duals[k], conflict_duals, state_manager);
+        auto [opt_col,reduced_cost] = find_shortest_path_for_train(k, flow_duals[k], service_duals[k], conflict_duals, state_manager);
         
         // Si une colonne (chemin de coût réduit < 0) a été trouvée, on l'ajoute
-        if (opt_col.has_value()) {
-            new_columns.push_back(opt_col.value());
+        if (reduced_cost <= -1e-6) {
+            new_columns.push_back(opt_col);
+            best_reduced_costs[k] = reduced_cost;
         }
     }
-    return new_columns;
+    return {new_columns, best_reduced_costs};
 }
 
-std::optional<Column> PricingProblem::find_shortest_path_for_train(int train_id, double pi_k, const std::vector<double>& service_duals_k, const std::vector<std::vector<double>>& conflict_duals, const GlobalStateManager& state_manager) const{
+std::pair<Column, double> PricingProblem::find_shortest_path_for_train(int train_id, double pi_k, const std::vector<double>& service_duals_k, const std::vector<std::vector<double>>& conflict_duals, const GlobalStateManager& state_manager) const{
     
     const Train& train = trains_[train_id];
     int ns = service_duals_k.size();
@@ -152,26 +153,19 @@ std::optional<Column> PricingProblem::find_shortest_path_for_train(int train_id,
         }
     }
     
-    int best_state = -1;
-    double best_rcost = INF;
+
     int full_mask = mask_count - 1; // Tous les bits à 1 = tous les services requis sont faits
     int s = state_index(1, full_mask); 
+    double best_rcost = dist_[s];
+    int best_state = s;
     
-    if (dist_[s] < best_rcost) {
-        best_rcost = dist_[s];
-        best_state = s;
-    }
 
     // Si on n'a rien trouvé d'atteignable
     if (best_state < 0 || best_rcost >= INF / 2.0) {
-        return std::nullopt;
+        return {Column(), INF};
     }
 
-    // 6. Test d'amélioration (Condition de la génération de colonnes)
     double total_reduced_cost = best_rcost - pi_k;
-    if (total_reduced_cost >= -1e-4) {
-        return std::nullopt; // Le chemin n'est pas assez bon pour améliorer le Master
-    }
 
     // 7. Reconstruction du chemin et création de la Colonne "Propre"
     Column new_col;
@@ -201,5 +195,5 @@ std::optional<Column> PricingProblem::find_shortest_path_for_train(int train_id,
     std::reverse(path_arcs.begin(), path_arcs.end());
     new_col.arc_ids = path_arcs;
 
-    return new_col;
+    return {new_col,total_reduced_cost};
 }

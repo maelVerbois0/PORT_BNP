@@ -226,3 +226,20 @@ bool MasterProblem::is_sol_fractional() const {
 int MasterProblem::get_gurobi_status() const {
     return model_->get(GRB_IntAttr_Status);
 }
+
+void MasterProblem::set_time_limit(double time_limit_seconds){
+    model_->set(GRB_DoubleParam_TimeLimit, time_limit_seconds);
+    return;
+}
+
+void MasterProblem::set_focus_to_finding_sol(){
+    model_->set(GRB_IntParam_MIPFocus, 1);
+}
+
+void MasterProblem::set_focus_to_auto(){
+    model_->set(GRB_IntParam_MIPFocus, 0);
+}
+
+int MasterProblem::get_current_nb_solutions() const{
+    return model_->get(GRB_IntAttr_SolCount);
+}

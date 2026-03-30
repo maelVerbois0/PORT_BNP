@@ -9,7 +9,7 @@
 SearchTree::SearchTree():
     best_upper_bound_(INF),
     best_lower_bound_(-INF),
-    current_strategy_(SearchStrategy::DFS),
+    current_strategy_(SearchStrategy::BBF),
     current_node_(nullptr)
 {
 
@@ -128,11 +128,6 @@ void SearchTree::add_node_to_queues(BPNode* raw_node) {
         open_node_DFS_.push(raw_node);
     } else {
         open_node_BBF_.push(raw_node);
-        BPNode* lowest_bound_node = open_node_BBF_.top();
-        if(lowest_bound_node->status == NodeStatus::PRUNED){
-            throw std::runtime_error("The lowest known bound has been pruned meaning bug or convergence to optimality");
-        }
-        set_best_lower_bound(lowest_bound_node->lower_bound);
     }
 }
 
@@ -151,7 +146,25 @@ void SearchTree::prune(BPNode* node) {
 // --- Getters & Setters ---
 
 double SearchTree::get_best_upper_bound() const { return best_upper_bound_; }
-double SearchTree::get_best_lower_bound() const { return best_lower_bound_; }
+double SearchTree::get_best_lower_bound() const {
+    double bound = INF; 
+
+    if (!open_node_BBF_.empty()) {
+        bound = open_node_BBF_.top()->lower_bound;
+    }
+    
+    if (current_node_ != nullptr && (current_node_->status == NodeStatus::PROCESSING || current_node_->status == NodeStatus::UNPROCESSED)) {
+        if (current_node_->lower_bound < bound) {
+            bound = current_node_->lower_bound;
+        }
+    }
+    
+    if (bound == INF) {
+        return best_upper_bound_;
+    }
+    
+    return bound;
+}
 SearchStrategy SearchTree::get_current_strategy() const { return current_strategy_; }
 std::vector<Column> SearchTree::get_incumbent_solution() const { return incumbent_solution_; }
 
@@ -162,12 +175,6 @@ void SearchTree::set_best_upper_bound(double upper_bound) {
     best_upper_bound_ = upper_bound;
 }
 
-void SearchTree::set_best_lower_bound(double lower_bound) {
-    if (lower_bound + 1e-5 < best_lower_bound_) {
-        throw std::runtime_error("Trying to set a lower bound that is worse than the current one.");
-    }
-    best_lower_bound_ = lower_bound;
-}
 
 void SearchTree::set_incumbent_solution(double upper_bound, const std::vector<Column>& solution) {
     set_best_upper_bound(upper_bound);

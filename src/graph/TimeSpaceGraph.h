@@ -31,6 +31,7 @@ public:
     int get_nb_pnodes() const {return num_pnodes_;}
     int get_nb_services() const {return num_services_;}
     int get_dummy_arc_id(int k) const{return dummy_arcs_[k];}
+    const std::vector<int>& get_arcs_providing_service(int service_id) const;
 
     
     // Utilitaires

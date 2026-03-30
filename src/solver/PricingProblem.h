@@ -32,7 +32,7 @@ private:
 public:
     PricingProblem(const TimeSpaceGraph& graph, const std::vector<Train>& trains);
 
-    std::vector<Column> solve(
+    std::pair<std::vector<Column>, std::vector<double>> solve(
         const std::vector<double>& flow_duals, 
         const std::vector<std::vector<double>>& service_duals, 
         const std::vector<std::vector<double>>& conflict_duals,
@@ -40,7 +40,7 @@ public:
     ) const;
 
     // Résout le pricing pour UN train spécifique 
-    std::optional<Column> find_shortest_path_for_train(
+    std::pair<Column, double> find_shortest_path_for_train(
         int train_id,
         double pi_k, 
         const std::vector<double>& service_duals_k,
