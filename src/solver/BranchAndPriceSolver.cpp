@@ -578,8 +578,7 @@ SolveStatistics BranchAndPriceSolver::solve(double time_limit_s, const std::stri
               << (stats.time_in_master_s / safe_total * 100.0) << "%)\n";
     std::cout << "   ├─ Pricing        : " << stats.time_in_pricing_s << " s (" 
               << (stats.time_in_pricing_s / safe_total * 100.0) << "%)\n";
-    std::cout << "   └─ Heuristiques   : " << stats.time_in_heuristics_s << " s (" 
-              << (stats.time_in_heuristics_s / safe_total * 100.0) << "%)\n";
+    std::cout << "   └─ Heuristiques primales : " << stats.time_in_heuristics_s << " s (inclut une partie du temps de Master/Pricing) <<\n";
     
     std::cout << "\n  RÉSULTATS:\n";
     std::cout << "   ├─ Noeuds explorés: " << stats.explored_nodes << "\n";
