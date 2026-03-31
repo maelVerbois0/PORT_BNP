@@ -71,8 +71,11 @@ target_link_libraries(tusp_core PUBLIC gurobi)
 
 ################# Executables #################
 # Create the column generation executable
-add_executable(tusp_solver src/benchmark_B&P.cpp)
-target_link_libraries(tusp_solver PUBLIC tusp_core)
+add_executable(benchmark_tusp_solver src/benchmark_B&P.cpp)
+target_link_libraries(benchmark_tusp_solver PUBLIC tusp_core)
+
+add_executable(cli_tusp_solver src/cli_B&P.cpp)
+target_link_libraries(cli_tusp_solver PUBLIC tusp_core)
 
 
 ################# Build Configurations #################
@@ -82,13 +85,13 @@ if(CMAKE_BUILD_TYPE MATCHES Debug)
     message(STATUS "Applying Debug options (Sanitizers, -O0)")
     
     if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
-        target_compile_options(tusp_solver PRIVATE 
+        target_compile_options(benchmark_tusp_solver PRIVATE 
             -g                      # Generate debug information
             -O0                     # Disable optimizations
             -fsanitize=address      # Enable AddressSanitizer
             -fno-omit-frame-pointer # Cleaner stack traces
         )
-        target_link_options(tusp_solver PRIVATE -fsanitize=address)
+        target_link_options(benchmark_tusp_solver PRIVATE -fsanitize=address)
     endif()
 endif()
 
@@ -99,7 +102,7 @@ if(CMAKE_BUILD_TYPE MATCHES Release)
     if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
         # 1. Flags d'optimisation maximale
         target_compile_options(tusp_core PRIVATE -O3 -DNDEBUG -march=native -w -pthread)
-        target_compile_options(tusp_solver PRIVATE -O3 -DNDEBUG -march=native -w -pthread)
+        target_compile_options(benchmark_tusp_solver PRIVATE -O3 -DNDEBUG -march=native -w -pthread)
         
         # 2. Activation du Link Time Optimization (LTO)
         include(CheckIPOSupported)
@@ -107,14 +110,43 @@ if(CMAKE_BUILD_TYPE MATCHES Release)
         if(lto_supported)
             message(STATUS "LTO (Link Time Optimization) supporté et activé !")
             set_target_properties(tusp_core PROPERTIES INTERPROCEDURAL_OPTIMIZATION TRUE)
-            set_target_properties(tusp_solver PROPERTIES INTERPROCEDURAL_OPTIMIZATION TRUE)
+            set_target_properties(benchmark_tusp_solver PROPERTIES INTERPROCEDURAL_OPTIMIZATION TRUE)
         else()
             message(WARNING "LTO n'est pas supporté par ce compilateur.")
         endif()
     
     elseif(MSVC) # Si tu compiles sous Windows avec MSVC
         target_compile_options(tusp_core PRIVATE /O2 /Ob2 /DNDEBUG /GL /w)
-        target_compile_options(tusp_solver PRIVATE /O2 /Ob2 /DNDEBUG /GL /w)
-        target_link_options(tusp_solver PRIVATE /LTCG)
+        target_compile_options(benchmark_tusp_solver PRIVATE /O2 /Ob2 /DNDEBUG /GL /w)
+        target_link_options(benchmark_tusp_solver PRIVATE /LTCG)
+    endif()
+endif()
+
+
+
+# --- MODE RELEASE (CLI)---
+if(CMAKE_BUILD_TYPE MATCHES Release)
+    message(STATUS "Applying aggressive optimizations")
+
+    if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+        # 1. Flags d'optimisation maximale
+        target_compile_options(tusp_core PRIVATE -O3 -DNDEBUG -march=native -w -pthread)
+        target_compile_options(cli_tusp_solver PRIVATE -O3 -DNDEBUG -march=native -w -pthread)
+        
+        # 2. Activation du Link Time Optimization (LTO)
+        include(CheckIPOSupported)
+        check_ipo_supported(RESULT lto_supported)
+        if(lto_supported)
+            message(STATUS "LTO (Link Time Optimization) supporté et activé !")
+            set_target_properties(tusp_core PROPERTIES INTERPROCEDURAL_OPTIMIZATION TRUE)
+            set_target_properties(cli_tusp_solver PROPERTIES INTERPROCEDURAL_OPTIMIZATION TRUE)
+        else()
+            message(WARNING "LTO n'est pas supporté par ce compilateur.")
+        endif()
+    
+    elseif(MSVC) # Si tu compiles sous Windows avec MSVC
+        target_compile_options(tusp_core PRIVATE /O2 /Ob2 /DNDEBUG /GL /w)
+        target_compile_options(cli_tusp_solver PRIVATE /O2 /Ob2 /DNDEBUG /GL /w)
+        target_link_options(cli_tusp_solver PRIVATE /LTCG)
     endif()
 endif()

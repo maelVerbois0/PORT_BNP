@@ -18,64 +18,33 @@ namespace fs = std::filesystem;
 int main() {
     // Liste instances à remplir
     std::vector<std::string> instance_paths = {
-        "../instances/small station/scenario 1/",
-        "../instances/small station/scenario 2/",
-        "../instances/small station/scenario 3/",
-        "../instances/small station/scenario 4/",
-        "../instances/small station/scenario 5/",
-
-
-        "../instances/medium station/scenario 1/",
-        "../instances/medium station/scenario 2/",
-        "../instances/medium station/scenario 3/",
-        "../instances/medium station/scenario 4/",
-        "../instances/medium station/scenario 5/",
 
         "../instances/large station/scenario 1/",
         "../instances/large station/scenario 2/",
         "../instances/large station/scenario 3/",
         "../instances/large station/scenario 4/",
-        "../instances/large station/scenario 5/",
 
-        "../instances/variant station/scenario 1/",
-        "../instances/variant station/scenario 2/",
-        "../instances/variant station/scenario 3/",
-        "../instances/variant station/scenario 4/",
-        "../instances/variant station/scenario 5/"
+        "../instances/variant station/scenario 1/"
 
         
     };
     std::vector<std::string> instance_name = {
-        "small_station_sce_1",
-        "small_station_sce_2",
-        "small_station_sce_3",
-        "small_station_sce_4",
-        "small_station_sce_5",
-        
-        "medium_station_sce_1",
-        "medium_station_sce_2",
-        "medium_station_sce_3",
-        "medium_station_sce_4",
-        "medium_station_sce_5",
 
         "large_station_sce_1",
         "large_station_sce_2",
         "large_station_sce_3",
         "large_station_sce_4",
-        "large_station_sce_5",
 
-        "variant_station_sce_1",
-        "variant_station_sce_2",
-        "variant_station_sce_3",
-        "variant_station_sce_4",
-        "variant_station_sce_5"
+        "variant_station_sce_1"
         
     };
+
+    double time_limit_s = 3600.0;
 
     fs::create_directories("../results/dynamics");
     fs::create_directories("../results/solutions");
 
-    double time_limit_s = 3600.0;
+    
 
     // Préparation du fichier de synthèse global
     std::ofstream summary_file("../results/summary_benchmark.csv");
@@ -103,7 +72,7 @@ int main() {
                      << stats.num_trains << ","
                      << stats.num_arcs << ","
                      << stats.root_lb << ","
-                     << stats.final_lb << ","
+                     << (stats.final_lb > - 1e9 ? std::to_string(stats.final_ub) : "") << ","
                      << (stats.final_ub < 1e9 ? std::to_string(stats.final_ub) : "") << ","
                      << std::max(0.0, stats.gap_pct) << ","
                      << stats.total_time_s << ","
