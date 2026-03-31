@@ -82,71 +82,55 @@ target_link_libraries(cli_tusp_solver PUBLIC tusp_core)
 
 # --- MODE DEBUG ---
 if(CMAKE_BUILD_TYPE MATCHES Debug)
-    message(STATUS "Applying Debug options (Sanitizers, -O0)")
+    message(STATUS "Applying Debug options (Sanitizers, -O0) to ALL targets")
     
     if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
-        target_compile_options(benchmark_tusp_solver PRIVATE 
-            -g                      # Generate debug information
-            -O0                     # Disable optimizations
-            -fsanitize=address      # Enable AddressSanitizer
-            -fno-omit-frame-pointer # Cleaner stack traces
-        )
-        target_link_options(benchmark_tusp_solver PRIVATE -fsanitize=address)
+        # On définit les flags de debug une seule fois
+        set(DEBUG_CXX_FLAGS "-g" "-O0" "-fsanitize=address" "-fno-omit-frame-pointer")
+        
+        # On les applique à la librairie et aux DEUX exécutables
+        target_compile_options(tusp_core PRIVATE ${DEBUG_CXX_FLAGS})
+        target_compile_options(benchmark_tusp_solver PRIVATE ${DEBUG_CXX_FLAGS})
+        target_compile_options(cli_tusp_solver PRIVATE ${DEBUG_CXX_FLAGS})
+        
+        # Le linker a aussi besoin de savoir qu'on utilise AddressSanitizer
+        target_link_options(benchmark_tusp_solver PRIVATE "-fsanitize=address")
+        target_link_options(cli_tusp_solver PRIVATE "-fsanitize=address")
     endif()
 endif()
 
-# --- MODE RELEASE (OPTIMISÉ POUR BENCHMARK) ---
+# --- MODE RELEASE ---
 if(CMAKE_BUILD_TYPE MATCHES Release)
-    message(STATUS "Applying aggressive optimizations for Benchmark (Release mode)")
+    message(STATUS "Applying aggressive optimizations (Release mode) to ALL targets")
 
     if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
-        # 1. Flags d'optimisation maximale
-        target_compile_options(tusp_core PRIVATE -O3 -DNDEBUG -march=native -w -pthread)
-        target_compile_options(benchmark_tusp_solver PRIVATE -O3 -DNDEBUG -march=native -w -pthread)
+        # On définit les flags de release
+        set(RELEASE_CXX_FLAGS "-O3" "-DNDEBUG" "-march=native" "-w" "-pthread")
         
-        # 2. Activation du Link Time Optimization (LTO)
+        # On les applique partout
+        target_compile_options(tusp_core PRIVATE ${RELEASE_CXX_FLAGS})
+        target_compile_options(benchmark_tusp_solver PRIVATE ${RELEASE_CXX_FLAGS})
+        target_compile_options(cli_tusp_solver PRIVATE ${RELEASE_CXX_FLAGS})
+        
+        # Activation du Link Time Optimization (LTO)
         include(CheckIPOSupported)
         check_ipo_supported(RESULT lto_supported)
         if(lto_supported)
             message(STATUS "LTO (Link Time Optimization) supporté et activé !")
             set_target_properties(tusp_core PROPERTIES INTERPROCEDURAL_OPTIMIZATION TRUE)
             set_target_properties(benchmark_tusp_solver PROPERTIES INTERPROCEDURAL_OPTIMIZATION TRUE)
-        else()
-            message(WARNING "LTO n'est pas supporté par ce compilateur.")
-        endif()
-    
-    elseif(MSVC) # Si tu compiles sous Windows avec MSVC
-        target_compile_options(tusp_core PRIVATE /O2 /Ob2 /DNDEBUG /GL /w)
-        target_compile_options(benchmark_tusp_solver PRIVATE /O2 /Ob2 /DNDEBUG /GL /w)
-        target_link_options(benchmark_tusp_solver PRIVATE /LTCG)
-    endif()
-endif()
-
-
-
-# --- MODE RELEASE (CLI)---
-if(CMAKE_BUILD_TYPE MATCHES Release)
-    message(STATUS "Applying aggressive optimizations")
-
-    if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
-        # 1. Flags d'optimisation maximale
-        target_compile_options(tusp_core PRIVATE -O3 -DNDEBUG -march=native -w -pthread)
-        target_compile_options(cli_tusp_solver PRIVATE -O3 -DNDEBUG -march=native -w -pthread)
-        
-        # 2. Activation du Link Time Optimization (LTO)
-        include(CheckIPOSupported)
-        check_ipo_supported(RESULT lto_supported)
-        if(lto_supported)
-            message(STATUS "LTO (Link Time Optimization) supporté et activé !")
-            set_target_properties(tusp_core PROPERTIES INTERPROCEDURAL_OPTIMIZATION TRUE)
             set_target_properties(cli_tusp_solver PROPERTIES INTERPROCEDURAL_OPTIMIZATION TRUE)
         else()
             message(WARNING "LTO n'est pas supporté par ce compilateur.")
         endif()
     
     elseif(MSVC) # Si tu compiles sous Windows avec MSVC
-        target_compile_options(tusp_core PRIVATE /O2 /Ob2 /DNDEBUG /GL /w)
-        target_compile_options(cli_tusp_solver PRIVATE /O2 /Ob2 /DNDEBUG /GL /w)
-        target_link_options(cli_tusp_solver PRIVATE /LTCG)
+        set(MSVC_RELEASE_FLAGS "/O2" "/Ob2" "/DNDEBUG" "/GL" "/w")
+        target_compile_options(tusp_core PRIVATE ${MSVC_RELEASE_FLAGS})
+        target_compile_options(benchmark_tusp_solver PRIVATE ${MSVC_RELEASE_FLAGS})
+        target_compile_options(cli_tusp_solver PRIVATE ${MSVC_RELEASE_FLAGS})
+        
+        target_link_options(benchmark_tusp_solver PRIVATE "/LTCG")
+        target_link_options(cli_tusp_solver PRIVATE "/LTCG")
     endif()
 endif()
